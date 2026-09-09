@@ -1,0 +1,26 @@
+[
+  {
+    "name": "denote",
+    "version": "4.2.3",
+    "url": "https://codeload.github.com/protesilaos/denote/tar.gz/9fd6692a32a99e236c377f12f114b77a91417ac2",
+    "sha256": "e5c6352652c960d44dc66fd97b56c9117f1ec466aad65ec8dc54540ae0749eec"
+  },
+  {
+    "name": "denote-sequence",
+    "version": "0.3.3",
+    "url": "https://codeload.github.com/protesilaos/denote-sequence/tar.gz/841cf148a56a6c62fb483d5529a45c689b04049e",
+    "sha256": "296b8c44e9ae718c34f7e0d22737c4c884c43ab19cb724006efc99ec9f123e54"
+  },
+  {
+    "name": "dash",
+    "version": "2.20.0",
+    "url": "https://codeload.github.com/magnars/dash.el/tar.gz/fcb5d831fc08a43f984242c7509870f30983c27c",
+    "sha256": "dfb770bd4602ee28b635d5fbe299f94c91c0b1ed4ad6e5a491bd135fe50d5400"
+  },
+  {
+    "name": "denote-regexp",
+    "version": "20250415.2202",
+    "url": "https://melpa.org/packages/denote-regexp-20250415.2202.tar",
+    "sha256": "c7f6766e941b1cfc8be5de172d737d320e0a9750de7fdec6f6526df4d4c79603"
+  }
+]

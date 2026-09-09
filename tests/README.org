@@ -1,0 +1,30 @@
+#+title: Denote Explorer test setup
+
+* Emacs dependencies
+Requires Emacs >=29.1 and Python 3. Dependencies live only in ignored
+=tests/.deps/=. No personal init file, package directory, or notes are used.
+=deps-lock.json= pins upstream revisions/versions and SHA-256 archive checksums:
+Denote 4.2.3, denote-sequence 0.3.3, dash 2.20.0, denote-regexp 20250415.2202.
+Existing package metadata lists dash >=2.19.1, but source already uses
+=-frequencies= introduced in 2.20.0; this harness pins the compatible version.
+Downloaded package files retain upstream license notices. Setup needs network;
+subsequent test runs do not. Set =DENOTE_EXPLORE_TEST_DEPS= for another cache,
+and =EMACS= for another executable. Local validation used Emacs 30.2.
+
+#+begin_src sh
+python3 tests/setup-deps.py
+sh tests/run-ert.sh
+sh tests/run-ert.sh '"denote-explore-smoke"'
+emacs --batch -Q -l tests/bootstrap.el -l tests/check-lisp.el
+#+end_src
+
+The optional selector is an Emacs Lisp expression. Smoke tests cover real
+=numeric= (1=2=3) and =alphanumeric= (1b3) split/join behavior and simulate
+absence of optional denote-sequence without affecting other graph functions.
+Every feature test must use temporary synthetic notes and restore dynamic
+settings. Bootstrap creates and deletes an otherwise empty temporary note root.
+
+No Makefile exists. Syntax/byte compilation and ERT are native alternatives
+to unavailable =make format=, =make check=, and =make test=. Byte-compiled
+artifacts go under ignored =tests/artifacts/=, never alongside package source.
+Use =check-parens= and review formatting rather than mass-reformatting source.
