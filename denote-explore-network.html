@@ -223,16 +223,98 @@
     <div class="info-tooltip"></div>
     <script src="{{d3-js}}"></script>
     <script>
-      const data = {{json-content}}
+      const importedData = {{json-content}};
+
+      // Keep exported graph data separate from browser-owned normalization/runtime state.
+      const rawMeta = importedData && typeof importedData.meta === "object" && importedData.meta
+            ? importedData.meta : {};
+      const meta = {
+          ...rawMeta,
+          type: typeof rawMeta.type === "string" ? rawMeta.type : "",
+          parameters: rawMeta.parameters == null ? [] : rawMeta.parameters
+      };
+      const isSequenceType = meta.type === "Sequence";
+
+      function endpointId(endpoint) {
+          return endpoint && typeof endpoint === "object" ? endpoint.id : endpoint;
+      }
+
+      function uniqueRelationKey(relation, seenKeys) {
+          const fallback = JSON.stringify([relation.kind, relation.sourceId, relation.targetId]);
+          const baseKey = typeof relation.key === "string" && relation.key.length > 0
+              ? relation.key : fallback;
+          const occurrence = seenKeys.get(baseKey) || 0;
+          seenKeys.set(baseKey, occurrence + 1);
+          return occurrence === 0 ? baseKey : `${baseKey}#${occurrence}`;
+      }
+
+      function safeSvgId(prefix, value, allocatedIds) {
+          let hash = 2166136261;
+          for (const character of value) {
+              hash ^= character.codePointAt(0);
+              hash = Math.imul(hash, 16777619);
+          }
+          const baseId = `${prefix}-${(hash >>> 0).toString(36)}`;
+          let id = baseId;
+          let suffix = 1;
+          while (allocatedIds.has(id)) {
+              id = `${baseId}-${suffix++}`;
+          }
+          allocatedIds.add(id);
+          return id;
+      }
+
+      const rawNodes = Array.isArray(importedData && importedData.nodes) ? importedData.nodes : [];
+      const nodes = rawNodes.filter(node => node && typeof node === "object").map(node => {
+          const normalizedNode = {
+              ...node,
+              keywords: Array.isArray(node.keywords) ? node.keywords : []
+          };
+          if (isSequenceType && !Object.hasOwn(normalizedNode, "sequenceMember")) {
+              normalizedNode.sequenceMember = true;
+          }
+          return normalizedNode;
+      });
+      const nodeById = new Map(nodes.map(node => [node.id, node]));
+      const incidentRelationsByNodeId = new Map(nodes.map(node => [node.id, []]));
+      const seenRelationKeys = new Map();
+      const rawEdges = Array.isArray(importedData && importedData.edges) ? importedData.edges : [];
+      const links = rawEdges.filter(edge => edge && typeof edge === "object").reduce((normalizedLinks, edge) => {
+          const sourceId = endpointId(edge.source);
+          const targetId = endpointId(edge.target);
+          // Preserve existing invalid-edge filtering after normalizing string/object endpoints.
+          if (!nodeById.has(sourceId) || !nodeById.has(targetId)) return normalizedLinks;
+          const relation = {
+              ...edge,
+              source: sourceId,
+              target: targetId,
+              sourceId,
+              targetId,
+              kind: typeof edge.kind === "string" && edge.kind.length > 0
+                  ? edge.kind : (isSequenceType ? "hierarchy" : "link")
+          };
+          relation.key = uniqueRelationKey(relation, seenRelationKeys);
+          normalizedLinks.push(relation);
+          incidentRelationsByNodeId.get(sourceId).push(relation);
+          if (targetId !== sourceId) incidentRelationsByNodeId.get(targetId).push(relation);
+          return normalizedLinks;
+      }, []);
+      const allocatedSvgIds = new Set();
+      links.forEach(link => {
+          link.markerId = safeSvgId("arrow", link.key, allocatedSvgIds);
+      });
+      const data = {...importedData, meta, nodes, edges: links};
 
       const width = 1440;
       const height = 900;
       const fontSize = 18;
       const color = d3.scaleOrdinal(d3.{{d3-colourscheme}});
-      const nodes = data.nodes; // Array of nodes
-      // Filter out invalid edges referencing non-existent node IDs to prevent layout crashes
-      const nodeIds = new Set(nodes.map(n => n.id));
-      const links = data.edges.filter(l => nodeIds.has(l.source) && nodeIds.has(l.target));
+
+      function normalizeLinkEndpoints(link) {
+          link.sourceId = endpointId(link.source);
+          link.targetId = endpointId(link.target);
+          return link;
+      }
 
       // Get unique sorted degree values to map label density ranks accurately without dead zones
       const uniqueDegrees = Array.from(new Set(nodes.map(d => d.degree))).sort((a, b) => a - b);
@@ -277,28 +359,31 @@
 
       const arrowMarkers = svg.append("defs");
 
-      // Pre-calculate refX for edges
-      links.forEach((d, i) => {
-      const targetNode = nodes.find(node => node.id === d.target);
+      // Pre-calculate refX for edges from normalized endpoint IDs.
+      links.forEach(d => {
+      const targetNode = nodeById.get(d.targetId);
       const targetRadius = isKeywordType ? 15 : radiusScale(targetNode.degree); // Use constant radius if isKeywordType is true
       d.refX = targetRadius + 2; // Dynamically calculate refX for alignment, with padding
       });
 
-      // Define arrow markers dynamically based on line weight
-      links.forEach((d, i) => {
-      arrowMarkers.append("marker")
-      .attr("id", `arrow-${i}`)
+      // Marker IDs derive from relation keys through safe opaque IDs, never node names.
+      const marker = arrowMarkers.selectAll("marker")
+      .data(links, d => d.key)
+      .join("marker")
+      .attr("id", d => d.markerId)
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", d.refX) // Use the pre-calculated refX
+      .attr("refX", d => d.refX) // Use the pre-calculated refX
       .attr("refY", 0)
       .attr("markerWidth", 10) // Adjust arrow size
       .attr("markerHeight", 5) // Adjust arrow size
-      .attr("orient", "auto")
-      .append("path")
+      .attr("orient", "auto");
+
+      marker.selectAll("path")
+      .data(d => [d])
+      .join("path")
       .attr("d", "M0,-5L10,0L0,5") // Arrow shape
       .attr("fill", "#999")
       .attr("stroke", "none");
-      });
 
       // Add links and use dynamically created markers
       const link = svgGroup.append("g")
@@ -306,12 +391,12 @@
       .attr("stroke-opacity", 0.6)
       // Binding and joining data
       .selectAll("line")
-      .data(links)
+      .data(links, d => d.key)
       .join("line")
       // Styling the links
       .attr("stroke-width", d => weightScale(d.weight || 1))
       // Add arrow markers
-      .attr("marker-end", (d, i) => data.meta.directed ? `url(#arrow-${i})` : null)
+      .attr("marker-end", d => data.meta.directed ? `url(#${d.markerId})` : null)
 
       // Add hover interaction for edges to show connection details in the sidebar
       .on("mouseover", (event, d) => {
@@ -331,7 +416,7 @@
       const node = svgGroup.append("g")
       .attr("stroke", "none")
       .selectAll("circle")
-      .data(nodes)
+      .data(nodes, d => d.id)
       .join("circle")
       .attr("r", d => isKeywordType ? 15 : radiusScale(d.degree))
       .attr("fill", d => color(d.type))
@@ -415,14 +500,17 @@
       .text(d => d.name);
 
       // Set up force simulation
+      const linkForce = d3.forceLink(links).id(d => d.id).distance(20);
       const simulation = d3.forceSimulation(nodes)
-      .force("link", d3.forceLink(links).id(d => d.id).distance(20)) // Link force
+      .force("link", linkForce) // Link force
       .force("charge", d3.forceManyBody().strength(-20)) // Repel nodes
       .force("center", d3.forceCenter(width / 2, height / 2)) // Centering force
       .force("collide", d3.forceCollide(50)) // Spread out nodes
       .force("x", d3.forceX(width / 2).strength(0.05)) // Keep nodes near center
       .force("y", d3.forceY(height / 2).strength(0.05))
       .on("tick", ticked);
+      // d3.forceLink mutates source/target into node objects; retain canonical IDs too.
+      linkForce.links().forEach(normalizeLinkEndpoints);
 
       // Update positions on each tick
       function ticked() {
