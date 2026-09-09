@@ -1519,9 +1519,28 @@ DEPTH defaults to zero with a root string.  Optionally analyse TEXT-ONLY files."
           (push (cons signature identifier) result))))))
 
 ;;; SAVE GRAPH
+(defun denote-explore--network-json-normalize-sequence (graph)
+  "Return a JSON-ready copy of Sequence GRAPH.
+
+Empty Sequence collections are vectors so `json-encode' emits JSON arrays
+instead of null."
+  (if (equal (alist-get 'type (alist-get 'meta graph)) "Sequence")
+      (let* ((graph (copy-tree graph))
+             (nodes (alist-get 'nodes graph)))
+        (setf (alist-get 'nodes graph) (or nodes []))
+        (setf (alist-get 'edges graph) (or (alist-get 'edges graph) []))
+        (dolist (node nodes)
+          (setf (alist-get 'keywords node)
+                (let ((keywords (alist-get 'keywords node)))
+                  (if (or (null keywords) (equal keywords ""))
+                      []
+                    (vconcat keywords)))))
+        graph)
+    graph))
+
 (defun denote-explore-network-encode-json (graph)
   "Encode a Denote GRAPH object to JSON and insert in a file."
-  (insert (json-encode graph))
+  (insert (json-encode (denote-explore--network-json-normalize-sequence graph)))
   (json-pretty-print-buffer))
 
 (defun denote-explore-network-encode-graphviz (graph)
@@ -1614,12 +1633,14 @@ DEPTH defaults to zero with a root string.  Optionally analyse TEXT-ONLY files."
         (push (format "<node id=%S label=%S>\n<attvalues>\n<attvalue for=\"degree\" value=\"%S\"/>\n</attvalues>\n</node>"
 		      id label degree) gexf-lines)))
     (push "</nodes>\n<edges>\n" gexf-lines)
-    (dolist (edge edges)
-      (let ((source (cdr (assoc 'source edge)))
-            (target (cdr (assoc 'target edge)))
-	    (weight (cdr (assoc 'weight edge))))
-        (push (format "<edge source=%S target=%S weight=\"%s\" />\n"
-		      source target weight) gexf-lines)))
+    (cl-loop for edge in edges
+             for edge-id from 0
+             do (let ((source (cdr (assoc 'source edge)))
+                      (target (cdr (assoc 'target edge)))
+	              (weight (cdr (assoc 'weight edge))))
+                  (push (format "<edge id=\"edge-%d\" source=%S target=%S weight=\"%s\" />\n"
+		                        edge-id source target weight)
+                        gexf-lines)))
     (insert (mapconcat #'identity gexf-header))
     (insert (mapconcat #'identity (nreverse gexf-lines)))
     (insert "</edges>\n</graph>\n</gexf>")
