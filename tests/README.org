@@ -69,3 +69,15 @@ are not additional assertion cases. Full integration runs every group.
 Tests use existing node/link selections; =.sequence-halo= names persistent
 sequence rings. Keyboard/status cases require standard roles and aria-live,
 not a separate production test API.
+
+* GraphViz syntax/render gate
+#+begin_src sh
+node tests/check-graphviz.mjs
+#+end_src
+Uses checksum-locked =@viz-js/viz= 3.30.0 (GraphViz 16.0.0 compiled to WASM) to
+parse/render DOT emitted by the actual Lisp encoder. This supplies an actual
+GraphViz-engine check when system =dot= is unavailable; it does NOT install or
+replace the production =dot= executable. Production GraphViz viewing still
+requires =dot= on PATH. Set =DENOTE_EXPLORE_TEST_ARTIFACTS= to a task-folder path
+for emitted DOT/SVG evidence. Tests retain GraphViz hyperlinks and every typed,
+parallel, reciprocal and self-edge record.
