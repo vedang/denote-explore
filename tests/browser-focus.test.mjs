@@ -106,6 +106,19 @@ test('camera: user gesture interrupts animated focus pan',async t=>{
   assert.deepEqual(await page.evaluate(()=>__graph.transform()),transform);
 });
 
+test('camera: clear focus interrupts in-flight pan',async t=>{
+  const {page}=await openGraph(t,await fixture(),{reducedMotion:'no-preference'});
+  // Same JS turn makes the pre-fix failure deterministic, independent of CDP latency.
+  const before=await page.getByRole('button',{name:/clear focus/i}).evaluate(button=>{
+    __graph.element('X').dispatchEvent(new MouseEvent('click',{bubbles:true}));
+    button.click();
+    return {selected:__graph.selected(),transform:__graph.transform()};
+  });
+  assert.equal(before.selected,null);
+  await page.waitForTimeout(400);
+  assert.deepEqual(await page.evaluate(()=>({selected:__graph.selected(),transform:__graph.transform()})),before);
+});
+
 test('drag: releasing a dragged node does not activate it',async t=>{
   const view=await openGraph(t,await fixture());
   const {page}=view;const p=await page.evaluate(()=>__graph.position('A'));
