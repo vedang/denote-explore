@@ -430,11 +430,16 @@
 
       // Hover details are rendered statically inside the #sidebar container
 
+      // Frame only Sequence graphs with known members; all other graph views keep baseline camera behavior.
+      let sequenceFrameState = isSequenceType && nodes.some(node => node.sequenceMember)
+          ? "pending" : "disabled";
+
       // Create a zoom behaviour
       const zoom = d3.zoom()
 	    .scaleExtent([0.1, 4]) // Zoom scale limits
 	    .on("zoom", (event) => {
 		svgGroup.attr("transform", event.transform); // Apply zoom
+                if (event.sourceEvent) cancelSequenceFrame();
 	    });
 
       // Create the SVG container with zoom functionality
@@ -486,6 +491,127 @@
       function labelEligible(node) {
           return node.sequenceMember || node.degree >= minDegreeTag;
       }
+
+      // Map visible CSS pixels through the actual rendered viewBox.  Sidebar width
+      // only reduces this rectangle when it overlaps the SVG, avoiding double subtraction.
+      function visibleSvgViewport() {
+          const svgElement = svg.node();
+          const viewBox = svgElement && svgElement.viewBox && svgElement.viewBox.baseVal;
+          const matrix = svgElement && svgElement.getScreenCTM();
+          if (!viewBox || !matrix || !Number.isFinite(viewBox.width) || !Number.isFinite(viewBox.height)
+              || viewBox.width <= 0 || viewBox.height <= 0) return null;
+
+          const origin = new DOMPoint(viewBox.x, viewBox.y).matrixTransform(matrix);
+          const corner = new DOMPoint(viewBox.x + viewBox.width, viewBox.y + viewBox.height)
+              .matrixTransform(matrix);
+          const rendered = {
+              x: Math.min(origin.x, corner.x),
+              y: Math.min(origin.y, corner.y),
+              width: Math.abs(corner.x - origin.x),
+              height: Math.abs(corner.y - origin.y)
+          };
+          if (!Number.isFinite(rendered.width) || !Number.isFinite(rendered.height)
+              || rendered.width <= 0 || rendered.height <= 0) return null;
+
+          let visible = {...rendered};
+          const sidebar = document.getElementById("sidebar");
+          const sidebarStyle = sidebar && window.getComputedStyle(sidebar);
+          const sidebarRect = sidebar && sidebarStyle.display !== "none" && sidebarStyle.visibility !== "hidden"
+              ? sidebar.getBoundingClientRect() : null;
+          if (sidebarRect) {
+              const overlapLeft = Math.max(rendered.x, sidebarRect.left);
+              const overlapRight = Math.min(rendered.x + rendered.width, sidebarRect.right);
+              const overlapTop = Math.max(rendered.y, sidebarRect.top);
+              const overlapBottom = Math.min(rendered.y + rendered.height, sidebarRect.bottom);
+              if (overlapRight > overlapLeft && overlapBottom > overlapTop) {
+                  const leftWidth = overlapLeft - rendered.x;
+                  const rightWidth = rendered.x + rendered.width - overlapRight;
+                  if (leftWidth >= rightWidth && leftWidth > 0) {
+                      visible.width = leftWidth;
+                  } else if (rightWidth > 0) {
+                      visible.x = overlapRight;
+                      visible.width = rightWidth;
+                  } else {
+                      return null;
+                  }
+              }
+          }
+
+          const toSvg = point => ({
+              x: viewBox.x + (point.x - rendered.x) * viewBox.width / rendered.width,
+              y: viewBox.y + (point.y - rendered.y) * viewBox.height / rendered.height
+          });
+          const topLeft = toSvg(visible);
+          const bottomRight = toSvg({x: visible.x + visible.width, y: visible.y + visible.height});
+          const user = {
+              x: Math.min(topLeft.x, bottomRight.x),
+              y: Math.min(topLeft.y, bottomRight.y),
+              width: Math.abs(bottomRight.x - topLeft.x),
+              height: Math.abs(bottomRight.y - topLeft.y)
+          };
+          return Number.isFinite(user.width) && Number.isFinite(user.height)
+              && user.width > 0 && user.height > 0 ? {screen: visible, user} : null;
+      }
+
+      function sequenceFrameBounds() {
+          if (sequenceNodes.length === 0) return null;
+          const padding = 40;
+          let left = Infinity;
+          let right = -Infinity;
+          let top = Infinity;
+          let bottom = -Infinity;
+          sequenceNodes.forEach(node => {
+              const x = finiteCoordinate(node.x, width / 2);
+              const y = finiteCoordinate(node.y, height / 2);
+              const radius = nodeRadius(node);
+              left = Math.min(left, x - radius - padding);
+              right = Math.max(right, x + radius + padding);
+              top = Math.min(top, y - radius - padding);
+              bottom = Math.max(bottom, y + radius + padding);
+          });
+          const bounds = {left, right, top, bottom, width: right - left, height: bottom - top};
+          return [bounds.left, bounds.right, bounds.top, bounds.bottom, bounds.width, bounds.height]
+              .every(Number.isFinite) && bounds.width > 0 && bounds.height > 0 ? bounds : null;
+      }
+
+      function sequenceFrameTransform() {
+          const viewport = visibleSvgViewport();
+          const bounds = sequenceFrameBounds();
+          if (!viewport || !bounds) return null;
+          const [minimumZoom, maximumZoom] = zoom.scaleExtent();
+          const fitZoom = Math.min(viewport.user.width / bounds.width, viewport.user.height / bounds.height);
+          const scale = Math.max(minimumZoom, Math.min(maximumZoom, fitZoom));
+          if (!Number.isFinite(scale) || scale <= 0) return null;
+          const centerX = bounds.left + bounds.width / 2;
+          const centerY = bounds.top + bounds.height / 2;
+          return d3.zoomIdentity
+              .translate(viewport.user.x + viewport.user.width / 2 - centerX * scale,
+                         viewport.user.y + viewport.user.height / 2 - centerY * scale)
+              .scale(scale);
+      }
+
+      function cancelSequenceFrame() {
+          if (sequenceFrameState === "pending") sequenceFrameState = "cancelled";
+          svg.interrupt("sequence-frame");
+      }
+
+      function frameSequenceOnce() {
+          if (sequenceFrameState !== "pending") return;
+          const transform = sequenceFrameTransform();
+          if (!transform) return;
+          sequenceFrameState = "applied";
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+              svg.call(zoom.transform, transform);
+          } else {
+              svg.transition("sequence-frame").duration(250).call(zoom.transform, transform);
+          }
+      }
+
+      svg.on("pointerdown.sequence-frame", cancelSequenceFrame)
+          .on("mousedown.sequence-frame", cancelSequenceFrame)
+          .on("touchstart.sequence-frame", cancelSequenceFrame)
+          .on("wheel.sequence-frame", cancelSequenceFrame)
+          .on("keydown.sequence-frame", cancelSequenceFrame);
 
       const arrowMarkers = svg.append("defs");
 
@@ -675,7 +801,8 @@
       .force("collide", d3.forceCollide(50)) // Spread out nodes
       .force("x", d3.forceX(width / 2).strength(0.05)) // Keep nodes near center
       .force("y", d3.forceY(height / 2).strength(0.05))
-      .on("tick", ticked);
+      .on("tick", ticked)
+      .on("end.sequence-frame", frameSequenceOnce);
       if (isSequenceType) {
           simulation.force("sequence-context", d3.forceRadial(
               d => d.sequenceMember ? 100 : 250, width / 2, height / 2
@@ -775,10 +902,14 @@
       labels
       .attr("x", d => d.x)
       .attr("y", d => d.y);
+
+      // Threshold trigger is guarded by sequenceFrameState; later ticks never refit.
+      if (simulation.alpha() <= 0.1) frameSequenceOnce();
       }
 
       // Drag event handlers
       function dragstarted(event) {
+      cancelSequenceFrame();
       if (!event.active) simulation.alphaTarget(0.3).restart();
       event.subject.fx = event.subject.x;
       event.subject.fy = event.subject.y;
