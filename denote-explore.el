@@ -1435,6 +1435,8 @@ root string.  Optionally analyse TEXT-ONLY files."
            (lambda (file)
              (let* ((node (denote-explore--network-extract-node file))
                     (identifier (alist-get 'id node)))
+               (when (equal (alist-get 'keywords node) "")
+                 (setf (alist-get 'keywords node) nil))
                (append node
                        `((sequenceMember . ,(if (member identifier sequence-ids)
                                                  t

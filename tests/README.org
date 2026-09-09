@@ -62,7 +62,8 @@ Run =sh tests/run-browser.sh 'PREFIX:'= (alternatives separated by =|=):
 - =focus:= task19 (6 named cases).
 - =camera:= (4, including clear-pan regression) and =drag:= (1) task20.
 - =labels:= and =isolation:= task21 (2).
-- =keyboard:= (4), =status:= (1), =reduced-motion:= (1) task22.
+- =keyboard:= (6, including animated Enter/Space), =status:= (1),
+  =reduced-motion:= (1) task22.
 - =statistics:= task23.
 Node may print a passing file wrapper for files with no matching tests; these
 are not additional assertion cases. Full integration runs every group.

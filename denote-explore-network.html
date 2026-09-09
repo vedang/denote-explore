@@ -667,11 +667,13 @@
           }
       }
 
+      // Capture keydown before node activation, which can otherwise start a pan
+      // that a bubbling SVG handler immediately cancels.
       svg.on("pointerdown.sequence-frame", cancelSequenceFrame)
           .on("mousedown.sequence-frame", cancelSequenceFrame)
           .on("touchstart.sequence-frame", cancelSequenceFrame)
           .on("wheel.sequence-frame", cancelSequenceFrame)
-          .on("keydown.sequence-frame", cancelSequenceFrame);
+          .on("keydown.sequence-frame", cancelSequenceFrame, true);
 
       const arrowMarkers = svg.append("defs");
 
