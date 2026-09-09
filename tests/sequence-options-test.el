@@ -1,0 +1,77 @@
+;;; sequence-options-test.el --- Options and regeneration -*- lexical-binding: t; -*-
+(require 'test-helper)
+(defvar denote-explore-network-context-depth)
+
+(ert-deftest denote-explore-options-direct-independent-history ()
+  (denote-explore-test-with-directory
+    (denote-explore-test-note 1 "1")
+    (dolist (history '(nil ("Keywords" 3) ("Sequence" ("9" 4))))
+      (let* ((denote-explore-network-previous history)
+             (meta (alist-get 'meta (denote-explore-network-sequence-graph "1" t))))
+        (should (equal (alist-get 'type meta) "Sequence"))
+        (should (equal (alist-get 'parameters meta) '("1" 0)))))))
+
+(ert-deftest denote-explore-options-saved-pair-and-legacy-regenerate ()
+  (denote-explore-test-with-directory
+    (denote-explore-test-note 1 "1")
+    (denote-explore-test-note 2 nil (denote-explore-test-link 1))
+    (dolist (query '("1" "" ("1" 1)))
+      (let ((denote-explore-network-previous (list "Sequence" query)) (saved nil) (viewed 0))
+        (cl-letf (((symbol-function 'denote-explore--network-save) (lambda (graph) (setq saved graph)))
+                  ((symbol-function 'denote-explore-network-view) (lambda () (cl-incf viewed))))
+          (denote-explore-network-regenerate t)
+          (should (= viewed 1))
+          (should (equal (alist-get 'parameters (alist-get 'meta saved))
+                         (if (listp query) query (list query 0))))
+          (should (= (length (alist-get 'nodes saved)) (if (listp query) 2 1))))))))
+
+(ert-deftest denote-explore-options-invalid-depth-and-query ()
+  (denote-explore-test-with-directory
+    (denote-explore-test-note 1 "1")
+    (dolist (bad '(-1 1.5 "2" (1)))
+      (should-error (denote-explore-network-sequence-graph "1" t bad) :type 'user-error))
+    (dolist (bad '(42 ("1") ("1" -1) ("1" 1 2) (1 2)))
+      (should-error (denote-explore-network-sequence-graph bad t) :type 'user-error))
+    (should-error (denote-explore-network-sequence-graph '("1" 1) t 2) :type 'user-error)))
+
+(ert-deftest denote-explore-options-prompt-default-retry-and-text-only ()
+  (denote-explore-test-with-directory
+    (denote-explore-test-note 1 "1")
+    (let ((denote-explore-network-context-depth 3) (answers '(-1 1.5 2))
+          (defaults nil) (called nil))
+      (cl-letf (((symbol-function 'completing-read) (lambda (&rest _) "1"))
+                ((symbol-function 'read-number)
+                 (lambda (_prompt &optional default &rest _)
+                   (push default defaults) (pop answers)))
+                ((symbol-function 'denote-explore-network-sequence-graph)
+                 (lambda (&rest args) (setq called args) 'graph)))
+        (should (eq (denote-explore-network-sequence '(4)) 'graph))
+        (should (= (length defaults) 3))
+        (should (= (car (last defaults)) 3))
+        (should (equal denote-explore-network-previous '("Sequence" ("1" 2))))
+        (should (or (equal called '("1" (4) 2)) (equal called '(("1" 2) (4)))))))))
+
+(ert-deftest denote-explore-options-regenerate-current-text-only ()
+  (denote-explore-test-with-directory
+    (denote-explore-test-note 1 "1" (denote-explore-test-link 2))
+    (denote-explore-test-note 2 nil nil "png")
+    (let ((denote-explore-network-previous '("Sequence" ("1" 1))) (saved nil))
+      (cl-letf (((symbol-function 'denote-explore--network-save) (lambda (graph) (setq saved graph)))
+                ((symbol-function 'denote-explore-network-view) #'ignore))
+        (denote-explore-network-regenerate t)
+        (should (= (length (alist-get 'nodes saved)) 1))
+        (denote-explore-network-regenerate nil)
+        (should (= (length (alist-get 'nodes saved)) 2))))))
+
+(ert-deftest denote-explore-options-other-type-dispatch-baseline ()
+  (dolist (case '(("Community" "x" denote-explore-network-community-graph)
+                  ("Neighbourhood" ("20260101T000001" 2) denote-explore-network-neighbourhood-graph)
+                  ("Keywords" 2 denote-explore-network-keywords-graph)))
+    (let ((denote-explore-network-previous (list (car case) (cadr case))) (called nil))
+      (cl-letf (((symbol-function (nth 2 case)) (lambda (&rest args) (setq called args) 'graph))
+                ((symbol-function 'denote-explore--network-save) #'ignore)
+                ((symbol-function 'denote-explore-network-view) #'ignore))
+        (denote-explore-network-regenerate '(4))
+        (should (equal called (list (cadr case) '(4))))))))
+
+;;; sequence-options-test.el ends here
