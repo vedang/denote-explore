@@ -128,4 +128,18 @@
             (should (= (length (alist-get 'nodes graph)) 6))
             (should (= (length warnings) (if (<= threshold 6) 1 0)))))))))
 
+(ert-deftest denote-explore-context-index-anchored-ignore-relative-semantics ()
+  (denote-explore-test-with-directory
+    (denote-explore-test-note 1 "1" (denote-explore-test-link 2))
+    (denote-explore-test-note 2 nil (denote-explore-test-link 3))
+    (denote-explore-test-note 3 nil)
+    (let* ((denote-explore-network-regex-ignore (concat "\\`" (denote-explore-test-id 2)))
+           (legacy-files (denote-explore--network-filter-files
+                          (denote-directory-files nil nil t nil t))))
+      ;; Establish old relative-name semantics before checking the new graph.
+      (should (equal (sort (mapcar #'denote-retrieve-filename-identifier legacy-files) #'string<)
+                     (mapcar #'denote-explore-test-id '(1 3))))
+      (should (equal (denote-explore-test-ids (denote-explore-network-sequence-graph "1" t 2))
+                     (list (denote-explore-test-id 1)))))))
+
 ;;; sequence-context-test.el ends here
