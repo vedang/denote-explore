@@ -495,8 +495,17 @@
           return node.sequenceMember ? "graph-node sequence-node" : "graph-node context-node";
       }
 
+      // Visibility state belongs to graph nodes, so later UI controls cannot affect legend circles.
+      const hiddenNodeIds = new Set();
+      let communityIsolatedNodesHidden = false;
+
+      function nodeIsVisible(node) {
+          return !hiddenNodeIds.has(node.id);
+      }
+
       function labelEligible(node) {
-          return node.sequenceMember || node.degree >= minDegreeTag;
+          return nodeIsVisible(node)
+              && (node.degree >= minDegreeTag || node.sequenceMember || node.id === selectedNodeId);
       }
 
       // Map visible CSS pixels through the actual rendered viewBox.  Sidebar width
@@ -779,16 +788,22 @@
           }
       }
 
+      // Keep focus and labels synchronized when either state changes.
+      function applyGraphStyles() {
+          updateNodeFocus();
+          updateLabels();
+      }
+
       function selectNode(node) {
           selectedNodeId = node.id;
-          updateNodeFocus();
+          applyGraphStyles();
           panFocusedNode(node);
       }
 
       // Kept separate so keyboard and clear-control work can reuse base-style recovery.
       function clearNodeFocus() {
           selectedNodeId = null;
-          updateNodeFocus();
+          applyGraphStyles();
       }
 
       // Add nodes
@@ -867,20 +882,43 @@
       .on("drag", dragged)
       .on("end", dragended));
 
-      // Add a dedicated group container for text labels to ensure consistent D3 parentage
+      // Add a dedicated group container for text labels to ensure consistent D3 parentage.
       const labelGroup = svgGroup.append("g").attr("class", "labels-group");
+      let labels;
 
-      // Sequence labels remain visible at every density; later focus can extend this predicate.
-      let labels = labelGroup.selectAll("text")
-      .data(nodes.filter(labelEligible), d => d.id)
-      .join("text")
-      .attr("class", d => d.sequenceMember ? "sequence-label" : null)
-      .attr("dx", 10)
-      .attr("dy", ".35em")
-      .style("font-size", `${fontSize}px`)
-      .style("font-family", "sans-serif")
-      .style("fill", "#333")
-      .text(d => d.name);
+      // Label-only joins preserve simulation state and put entered labels at current node positions.
+      function updateLabels() {
+          labels = labelGroup.selectAll("text")
+              .data(nodes.filter(labelEligible), d => d.id)
+              .join(
+                  enter => enter.append("text")
+                      .attr("dx", 10)
+                      .attr("dy", ".35em")
+                      .style("font-size", `${fontSize}px`)
+                      .style("font-family", "sans-serif")
+                      .style("fill", "#333")
+                      .text(d => d.name),
+                  update => update,
+                  exit => exit.remove()
+              )
+              .attr("class", d => d.sequenceMember ? "sequence-label" : null)
+              .attr("x", d => finiteCoordinate(d.x, width / 2))
+              .attr("y", d => finiteCoordinate(d.y, height / 2));
+      }
+      updateLabels();
+
+      // Shared visibility hook for isolated filtering and later keyboard support.
+      function applyNodeVisibility() {
+          node.style("display", d => nodeIsVisible(d) ? null : "none")
+              .attr("tabindex", d => nodeIsVisible(d) ? null : -1);
+          sequenceHalo.style("display", d => nodeIsVisible(d) ? null : "none");
+          const selectedNode = nodes.find(d => d.id === selectedNodeId);
+          if (selectedNode && !nodeIsVisible(selectedNode)) {
+              clearNodeFocus();
+          } else {
+              applyGraphStyles();
+          }
+      }
 
       function relationDistance(relation) {
           if (!isSequenceType) return 20;
@@ -1144,20 +1182,18 @@
 	      toggleButton.style.cursor = "pointer";
 	      toggleButton.style.fontSize = "18px";
 
-	      // Toggle button click event
+	      toggleButton.textContent = communityIsolatedNodesHidden
+		  ? "Show Isolated Nodes" : "Hide Isolated Nodes";
+	      // Community filtering is restricted to the graph-node selection.
 	      toggleButton.addEventListener("click", () => {
-		  // Find all nodes with degree = 0
-		  const isolatedNodes = d3.selectAll("circle")
-			.filter(d => d.degree === 0);
-
-		  // Determine if they are currently visible
-		  const isVisible = isolatedNodes.style("display") !== "none";
-
-		  // Toggle their visibility
-		  isolatedNodes.style("display", isVisible ? "none" : "block");
-
-		  // Update the button text
-		  toggleButton.textContent = isVisible ? "Show Isolated Nodes" : "Hide Isolated Nodes";
+		  communityIsolatedNodesHidden = !communityIsolatedNodesHidden;
+		  node.filter(d => d.degree === 0).each(d => {
+		      if (communityIsolatedNodesHidden) hiddenNodeIds.add(d.id);
+		      else hiddenNodeIds.delete(d.id);
+		  });
+		  applyNodeVisibility();
+		  toggleButton.textContent = communityIsolatedNodesHidden
+		      ? "Show Isolated Nodes" : "Hide Isolated Nodes";
 	      });
 
 	      // Create a comment element to display the count
@@ -1398,24 +1434,6 @@
 		updateLabels();
 	    });
 
-      // Function to update labels based on the slider value
-      function updateLabels() {
-	  labels = labelGroup.selectAll('text')
-              .data(nodes.filter(labelEligible), d => d.id)
-              .join(
-		  enter => enter.append('text')
-                      .attr('dx', 10)
-                      .attr('dy', '.35em')
-                      .style('font-size', `${fontSize}px`)
-                      .style('font-family', 'sans-serif')
-                      .style('fill', '#333')
-                      .text(d => d.name),
-		  update => update,
-		  exit => exit.remove()
-              )
-              .attr('class', d => d.sequenceMember ? 'sequence-label' : null);
-	  simulation.alpha(1).restart();
-      }
 
       // Sidebar resizer drag functionality
       const resizer = document.getElementById("resizer");
