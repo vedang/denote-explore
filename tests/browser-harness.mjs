@@ -1,12 +1,13 @@
 import assert from 'node:assert/strict';
 import { readFile, mkdir } from 'node:fs/promises';
 import { createServer } from 'node:http';
-import { chromium } from 'playwright';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const root = path.dirname(here);
+process.env.PLAYWRIGHT_BROWSERS_PATH ||= path.join(here, '.deps/browsers');
+const {chromium} = await import('playwright');
 export async function fixture(name = 'sequence-small') {
   return JSON.parse(await readFile(path.join(here, 'fixtures', `${name}.json`), 'utf8'));
 }
@@ -61,17 +62,18 @@ export async function openGraph(t, graph, options = {}) {
     readFile(path.join(root, 'denote-explore-network.html'), 'utf8'),
     readFile(path.join(here, 'node_modules/d3/dist/d3.min.js')),
   ]);
-  const html = template
+  const rendered = options.html ?? template
     .replaceAll('{{graph-type}}', graph.meta.type)
     .replaceAll('{{d3-js}}', '/d3.js')
     .replaceAll('{{json-content}}', JSON.stringify(graph))
-    .replaceAll('{{d3-colourscheme}}', 'schemeCategory10')
+    .replaceAll('{{d3-colourscheme}}', 'schemeCategory10');
+  const html = rendered
     .replace('<script src="/d3.js"></script>', `<script src="/d3.js"></script>${instrumentation(options.stop !== false)}`)
     .replace('</body>', `${probe}</body>`);
   const server = createServer((request, response) => {
     if (request.url === '/d3.js') {
       response.writeHead(200, {'Content-Type': 'text/javascript'}); response.end(d3);
-    } else if (request.url.startsWith('/notes/')) {
+    } else if (request.url.startsWith('/notes/') || /\.(org|md|txt)(\?|$)/.test(request.url)) {
       response.writeHead(200, {'Content-Type': 'text/plain'}); response.end('Synthetic note preview');
     } else {
       response.writeHead(200, {'Content-Type': 'text/html'}); response.end(html);

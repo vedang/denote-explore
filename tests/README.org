@@ -81,3 +81,18 @@ replace the production =dot= executable. Production GraphViz viewing still
 requires =dot= on PATH. Set =DENOTE_EXPLORE_TEST_ARTIFACTS= to a task-folder path
 for emitted DOT/SVG evidence. Tests retain GraphViz hyperlinks and every typed,
 parallel, reciprocal and self-edge record.
+
+* Real-export and representative performance validation
+#+begin_src sh
+sh tests/run-browser.sh 'integration:'
+DENOTE_EXPLORE_TEST_ARTIFACTS="$TASK_DIR/performance" node tests/probe-performance.mjs
+#+end_src
+The integration fixture creates real temporary Denote notes, calls actual Lisp
+JSON and HTML exporters with browser launch stubbed, and serves that exact HTML.
+It parses substituted JS and checks focus/data/statistics, not copied UI logic.
+The standalone performance probe uses 1200 real notes (depth2 star/ring) plus the
+fixed dense-hub fixture. It records counts, one extractor scan, generation/load/
+settling/focus timings, finite geometry, sizing bounds and screenshots. Override
+=PERFORMANCE_NOTE_COUNT= only within 5..5000. Timings exclude fixture creation
+and are machine-local observations, not universal latency claims. Direct harness
+imports default to the pinned local browser cache too.
