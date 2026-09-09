@@ -1295,30 +1295,59 @@ Optionally analyse TEXT-ONLY files."
     (setq denote-explore-network-previous `("Sequence" ,root))
     (denote-explore-network-sequence-graph root text-only)))
 
-(defun denote-explore-network-sequence-graph (root text-only)
-  "Generate a Denote graph object from signature sequences for ROOT.
-Optionally analyse TEXT-ONLY files."
+(defun denote-explore--network-sequence-typed-edges (edges kind)
+  "Add sequence relationship KIND and stable keys to counted EDGES."
+  (mapcar
+   (lambda (edge)
+     (let ((source (alist-get 'source edge))
+           (target (alist-get 'target edge)))
+       `((source . ,source)
+         (target . ,target)
+         (kind . ,kind)
+         (weight . ,(or (alist-get 'weight edge) 1))
+         (key . ,(json-encode (vector kind source target))))))
+   edges))
+
+(defun denote-explore-network-sequence-graph (root text-only &optional depth)
+  "Generate a typed Denote sequence graph for ROOT through DEPTH link hops.
+Optionally analyse TEXT-ONLY files.  DEPTH defaults to zero."
   (unless (featurep 'denote-sequence)
     (user-error "Network Sequence Graphs require denote-sequence to be loaded"))
-  (let* ((all-files (denote-explore--network-filter-files
-                     (denote-directory-files nil nil text-only nil t)))
-         (files (seq-filter
-                 (lambda (file)
-                   (when-let ((signature (denote-retrieve-filename-signature file)))
-                     (denote-explore--network-sequence-member-p root signature)))
-                 all-files)))
-    (unless files
-      (user-error "No sequence notes found for root: %s" root))
-    (let* ((sequences (denote-explore--network-sequence-edges files))
-           (edges (denote-explore--network-edges-from-sequences sequences files))
-           (edges-alist (denote-explore--network-count-edges edges))
-           (nodes (mapcar #'denote-explore--network-extract-node files))
-           (nodes-degrees (denote-explore--network-degree nodes edges-alist))
-           (nodes-alist (denote-explore--network-backlinks nodes-degrees edges-alist))
-           (meta-alist `((directed . t)
-                         (type . ,(car denote-explore-network-previous))
-                         (parameters ,(cadr denote-explore-network-previous)))))
-      `((meta . ,meta-alist) (nodes . ,nodes-alist) (edges . ,edges-alist)))))
+  (let* ((depth (or depth 0))
+         (context (denote-explore--network-sequence-context root text-only depth))
+         (files (alist-get 'files context))
+         (sequence-files (alist-get 'sequence-files context))
+         (distances (alist-get 'distances context))
+         (sequence-ids (mapcar #'denote-retrieve-filename-identifier sequence-files))
+         (ids (mapcar #'denote-retrieve-filename-identifier files))
+         (hierarchy-edges
+          (denote-explore--network-sequence-typed-edges
+           (denote-explore--network-edges-from-sequences
+            (denote-explore--network-sequence-edges sequence-files) sequence-files)
+           "hierarchy"))
+         (link-edges
+          (denote-explore--network-sequence-typed-edges
+           (denote-explore--network-count-edges
+            (denote-explore--network-prune-edges ids (alist-get 'edges context)))
+           "link"))
+         (edges (append hierarchy-edges link-edges))
+         (nodes
+          (mapcar
+           (lambda (file)
+             (let* ((node (denote-explore--network-extract-node file))
+                    (identifier (alist-get 'id node)))
+               (append node
+                       `((sequenceMember . ,(if (member identifier sequence-ids)
+                                                 t
+                                               :json-false))
+                         (contextDistance . ,(gethash identifier distances))))))
+           files))
+         (nodes-degrees (denote-explore--network-degree nodes edges))
+         (nodes-alist (denote-explore--network-backlinks nodes-degrees edges))
+         (meta-alist `((directed . t)
+                       (type . "Sequence")
+                       (parameters ,root ,depth))))
+    `((meta . ,meta-alist) (nodes . ,nodes-alist) (edges . ,edges))))
 
 (defun denote-explore--network-sequence-member-p (root signature)
   "Return non-nil when SIGNATURE is ROOT or its structural descendant."
