@@ -202,6 +202,85 @@
 	  font-size: 18px; /* Optional: Adjust font size */
       }
 
+      /* Base Sequence layers derive only from exported membership metadata. */
+      .sequence-halo {
+          fill: none;
+          pointer-events: none;
+          stroke: #355c7d;
+          stroke-width: 4px;
+          stroke-opacity: 0.8;
+      }
+
+      .sequence-node {
+          stroke: #355c7d;
+          stroke-width: 1.5px;
+      }
+
+      .context-node {
+          opacity: 0.58;
+          stroke: #687985;
+          stroke-width: 1px;
+          stroke-dasharray: 2 2;
+      }
+
+      .sequence-relation-hierarchy {
+          stroke-width: 2.5px;
+          stroke-dasharray: none;
+          stroke-opacity: 0.9;
+      }
+
+      .sequence-relation-link {
+          stroke-width: 1.25px;
+          stroke-dasharray: 5 4;
+          stroke-opacity: 0.52;
+      }
+
+      .sequence-label {
+          font-weight: bold;
+          paint-order: stroke;
+          stroke: #fff;
+          stroke-width: 3px;
+          stroke-linejoin: round;
+      }
+
+      .sequence-style-legend .legend-item {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+          margin-bottom: 5px;
+      }
+
+      .sequence-style-legend .legend-swatch {
+          box-sizing: border-box;
+          display: inline-block;
+          flex: 0 0 24px;
+      }
+
+      .sequence-style-legend .sequence-member-swatch {
+          height: 16px;
+          border: 3px solid #355c7d;
+          border-radius: 50%;
+      }
+
+      .sequence-style-legend .context-swatch {
+          height: 12px;
+          border: 1px dashed #687985;
+          border-radius: 50%;
+          opacity: 0.58;
+      }
+
+      .sequence-style-legend .hierarchy-swatch,
+      .sequence-style-legend .link-swatch {
+          height: 0;
+          border-top: 3px solid #526a74;
+      }
+
+      .sequence-style-legend .link-swatch {
+          border-top-width: 1px;
+          border-top-style: dashed;
+          border-top-color: #7d8990;
+      }
+
     </style>
   </head>
   <body>
@@ -374,16 +453,38 @@
       // Define a weight scale for edge stroke width (Keywords only)
       const isKeywordType = data.meta.type === "Keywords";
       const maxWeight = d3.max(links, d => d.weight || 1);
+      const sequenceNodes = isSequenceType ? nodes.filter(node => node.sequenceMember) : [];
 
       // Define the weight scale with interpolation
       const weightScale = d3.scaleLinear()
 	    .domain([1, maxWeight]) // Map the range of weights
 	    .range(isKeywordType ? [2, 30] : [1, 1]); // Adjust the range
 
-      function nodeRadius(node) {
+      function scaledNodeRadius(node) {
           const degree = Number.isFinite(node && node.degree) ? node.degree : 0;
           const radius = isKeywordType ? 15 : radiusScale(degree);
           return Number.isFinite(radius) && radius > 0 ? radius : 7;
+      }
+
+      const minimumSequenceRadius = sequenceNodes.length > 0
+          ? d3.min(sequenceNodes, scaledNodeRadius) : null;
+
+      // Context may reflect degree, but may never visually eclipse every sequence node.
+      function nodeRadius(node) {
+          const radius = scaledNodeRadius(node);
+          if (isSequenceType && !node.sequenceMember && Number.isFinite(minimumSequenceRadius)) {
+              return Math.min(radius, minimumSequenceRadius);
+          }
+          return radius;
+      }
+
+      function nodeClass(node) {
+          if (!isSequenceType) return "graph-node";
+          return node.sequenceMember ? "graph-node sequence-node" : "graph-node context-node";
+      }
+
+      function labelEligible(node) {
+          return node.sequenceMember || node.degree >= minDegreeTag;
       }
 
       const arrowMarkers = svg.append("defs");
@@ -415,9 +516,14 @@
       .attr("stroke", "none");
 
       function relationClass(relation) {
-          return relation.kind === "hierarchy"
-              ? "relation relation-hierarchy"
-              : "relation relation-link";
+          const kindClass = relation.kind === "hierarchy" ? "relation-hierarchy" : "relation-link";
+          const sequenceClass = isSequenceType ? ` sequence-relation-${relation.kind}` : "";
+          return `relation ${kindClass}${sequenceClass}`;
+      }
+
+      function baseRelationStroke(relation) {
+          if (!isSequenceType) return "#999";
+          return relation.kind === "hierarchy" ? "#526a74" : "#7d8990";
       }
 
       // Add keyed relation paths and preserve edge hover behavior.
@@ -441,7 +547,7 @@
           link.attr("stroke", strokeForRelation);
           marker.select("path").attr("fill", strokeForRelation);
       }
-      updateRelationStrokes(() => "#999");
+      updateRelationStrokes(baseRelationStroke);
 
       // Add hover interaction for edges to show connection details in the sidebar
       link.on("mouseover", (event, d) => {
@@ -457,13 +563,23 @@
           d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover over a node to view note details</div>');
       });
 
+      // Persistent Sequence rings sit behind nodes and remain independent of later selection.
+      const sequenceHalo = svgGroup.append("g")
+      .attr("class", "sequence-halos")
+      .selectAll("circle")
+      .data(sequenceNodes, d => d.id)
+      .join("circle")
+      .attr("class", "sequence-halo")
+      .attr("r", d => nodeRadius(d) + 7);
+
       // Add nodes
       const node = svgGroup.append("g")
       .attr("stroke", "none")
       .selectAll("circle")
       .data(nodes, d => d.id)
       .join("circle")
-      .attr("r", d => isKeywordType ? 15 : radiusScale(d.degree))
+      .attr("class", nodeClass)
+      .attr("r", nodeRadius)
       .attr("fill", d => color(d.type))
       .on("click", (event, d) => {
       if (!isKeywordType) { // Only open hyperlink if isKeywordType is false
@@ -533,10 +649,11 @@
       // Add a dedicated group container for text labels to ensure consistent D3 parentage
       const labelGroup = svgGroup.append("g").attr("class", "labels-group");
 
-      // Add labels for nodes with degree >= minDegreeTag
+      // Sequence labels remain visible at every density; later focus can extend this predicate.
       let labels = labelGroup.selectAll("text")
-      .data(nodes.filter(d => d.degree >= minDegreeTag), d => d.id) // Filter nodes based on degree and bind keys
+      .data(nodes.filter(labelEligible), d => d.id)
       .join("text")
+      .attr("class", d => d.sequenceMember ? "sequence-label" : null)
       .attr("dx", 10)
       .attr("dy", ".35em")
       .style("font-size", `${fontSize}px`)
@@ -544,8 +661,13 @@
       .style("fill", "#333")
       .text(d => d.name);
 
-      // Set up force simulation
-      const linkForce = d3.forceLink(links).id(d => d.id).distance(20);
+      function relationDistance(relation) {
+          if (!isSequenceType) return 20;
+          return relation.kind === "hierarchy" ? 50 : 70;
+      }
+
+      // Set up force simulation. The gentle role force keeps context secondary without a tree layout.
+      const linkForce = d3.forceLink(links).id(d => d.id).distance(relationDistance);
       const simulation = d3.forceSimulation(nodes)
       .force("link", linkForce) // Link force
       .force("charge", d3.forceManyBody().strength(-20)) // Repel nodes
@@ -554,6 +676,11 @@
       .force("x", d3.forceX(width / 2).strength(0.05)) // Keep nodes near center
       .force("y", d3.forceY(height / 2).strength(0.05))
       .on("tick", ticked);
+      if (isSequenceType) {
+          simulation.force("sequence-context", d3.forceRadial(
+              d => d.sequenceMember ? 100 : 250, width / 2, height / 2
+          ).strength(d => d.sequenceMember ? 0.02 : 0.006));
+      }
       // d3.forceLink mutates source/target into node objects; retain canonical IDs too.
       linkForce.links().forEach(normalizeLinkEndpoints);
 
@@ -636,6 +763,10 @@
       // Update positions on each tick without replacing keyed relation paths.
       function ticked() {
       link.attr("d", relationPath);
+
+      sequenceHalo
+      .attr("cx", d => d.x)
+      .attr("cy", d => d.y);
 
       node
       .attr("cx", d => d.x)
@@ -804,6 +935,30 @@
 	  legendTitle.style.marginBottom = "10px";
 	  legendTitle.textContent = "File Types";
 	  legendContainer.appendChild(legendTitle);
+
+	  if (isSequenceType) {
+	      const sequenceLegend = document.createElement("div");
+	      sequenceLegend.className = "sequence-style-legend";
+	      const sequenceLegendTitle = document.createElement("div");
+	      sequenceLegendTitle.style.fontWeight = "bold";
+	      sequenceLegendTitle.style.margin = "10px 0";
+	      sequenceLegendTitle.textContent = "Sequence layers";
+	      sequenceLegend.appendChild(sequenceLegendTitle);
+	      [["sequence-member-swatch", "Sequence member"],
+	       ["context-swatch", "Context note"],
+	       ["hierarchy-swatch", "Hierarchy"],
+	       ["link-swatch", "Actual link"]].forEach(([swatchClass, label]) => {
+		  const item = document.createElement("div");
+		  item.className = "legend-item";
+		  const swatch = document.createElement("span");
+		  swatch.className = `legend-swatch ${swatchClass}`;
+		  const text = document.createElement("span");
+		  text.textContent = label;
+		  item.append(swatch, text);
+		  sequenceLegend.appendChild(item);
+	      });
+	      legendContainer.appendChild(sequenceLegend);
+	  }
 
 	  // Generate legend and bar chart dynamically for non-keyword types
 	  if (!isKeywordType) {
@@ -998,7 +1153,7 @@
       // Function to update labels based on the slider value
       function updateLabels() {
 	  labels = labelGroup.selectAll('text')
-              .data(nodes.filter(d => d.degree >= minDegreeTag), d => d.id)
+              .data(nodes.filter(labelEligible), d => d.id)
               .join(
 		  enter => enter.append('text')
                       .attr('dx', 10)
@@ -1009,7 +1164,8 @@
                       .text(d => d.name),
 		  update => update,
 		  exit => exit.remove()
-              );
+              )
+              .attr('class', d => d.sequenceMember ? 'sequence-label' : null);
 	  simulation.alpha(1).restart();
       }
 
