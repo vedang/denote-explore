@@ -984,6 +984,27 @@ of a file."
               (append node (list (cons 'backlinks backlinks)))))
           nodes))
 
+(defun denote-explore--network-sequence-actual-metrics (nodes link-edges)
+  "Add actual-link metrics to NODES from typed actual LINK-EDGES.
+
+`actualDegree' counts incident actual-link records without weights.  A loop is
+incident once.  `actualBacklinks' sums weights of incoming actual links."
+  (mapcar
+   (lambda (node)
+     (let ((node-id (alist-get 'id node))
+           (actual-degree 0)
+           (actual-backlinks 0))
+       (dolist (edge link-edges)
+         (let ((source (alist-get 'source edge))
+               (target (alist-get 'target edge)))
+           (when (or (equal node-id source) (equal node-id target))
+             (cl-incf actual-degree))
+           (when (equal node-id target)
+             (cl-incf actual-backlinks (or (alist-get 'weight edge) 1)))))
+       (append node `((actualDegree . ,actual-degree)
+                      (actualBacklinks . ,actual-backlinks)))))
+   nodes))
+
 (defun denote-explore--network-filter-files (files)
   "Remove files matching `denote-explore-network-regex-ignore' from Denote FILES.
 Removes selected files from neighbourhood or community visualisation."
@@ -1408,10 +1429,21 @@ DEPTH defaults to zero with a root string.  Optionally analyse TEXT-ONLY files."
            files))
          (nodes-degrees (denote-explore--network-degree nodes edges))
          (nodes-alist (denote-explore--network-backlinks nodes-degrees edges))
+         (nodes-metrics
+          (denote-explore--network-sequence-actual-metrics nodes-alist link-edges))
          (meta-alist `((directed . t)
                        (type . "Sequence")
-                       (parameters ,root ,depth))))
-    `((meta . ,meta-alist) (nodes . ,nodes-alist) (edges . ,edges))))
+                       (parameters ,root ,depth)
+                       (contextDepth . ,depth)
+                       (sequenceCount . ,(length sequence-files))
+                       (contextCount . ,(- (length files) (length sequence-files)))
+                       (nodeCount . ,(length files))
+                       (hierarchyEdgeCount . ,(length hierarchy-edges))
+                       (linkEdgeCount . ,(length link-edges))
+                       (linkOccurrenceCount .
+                                            ,(cl-loop for edge in link-edges
+                                                      sum (or (alist-get 'weight edge) 1))))))
+    `((meta . ,meta-alist) (nodes . ,nodes-metrics) (edges . ,edges))))
 
 (defun denote-explore--network-sequence-member-p (root signature)
   "Return non-nil when SIGNATURE is ROOT or its structural descendant."
