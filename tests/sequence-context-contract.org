@@ -43,6 +43,16 @@ frontier-to-frontier edges). Preserve reciprocal/self links and repeated source
 occurrences. Traversal never multiplies weight. Stop when frontier exhausted.
 Every exported endpoint resolves to an exported node.
 
+* Index helper test interface
+=denote-explore--network-sequence-context(root text-only depth)= computes U/S
+and traversal, returning alist fields =files= (included files), =sequence-files=
+(S files), =distances= (equal-tested ID→distance hash table), and =edges=
+(raw occurrence-preserving actual links pruned to U, not yet induced Vd).
+At depth 0 =edges=nil= without extraction. Tests with =context-index= selectors
+belong to task11; =context-graph= selectors to task12; =context-warning= to25.
+Task12 may add optional public third depth to exercise assembly; task13 owns
+validation, prompts, saved-pair normalization and regeneration compatibility.
+
 * Graph data
 Internal graph remains alist with list-valued =nodes= and =edges= (nil allowed
 for edges). Additive node fields: =sequenceMember= (t or :json-false),
