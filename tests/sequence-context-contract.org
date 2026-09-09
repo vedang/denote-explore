@@ -1,0 +1,151 @@
+#+title: Sequence context and D3 focus contract
+
+* Authority and inputs
+Owner approved per-generation Emacs prompt, customizable integer depth default
+0, and D3-only focus with GraphViz hyperlinks unchanged. No live fetching,
+browser depth slider, strict tree layout, modifier opening or static focus.
+
+[tag:sequence_context_scope]
+Public graph call remains =(denote-explore-network-sequence-graph root text-only)=
+with implicit depth 0. Optional third =depth= supports explicit context.
+For regeneration, =root= may instead be =(root-string depth-integer)=; passing
+both structured root and non-nil third depth is a user-error. Reject malformed
+roots/depths, negative and fractional depths, rather than coercing.
+Saved history: =("Sequence" ("1" 2))=. Legacy =("Sequence" "1")= and
+=("Sequence" "")= regenerate at depth 0. C-u retains text-only semantics.
+=denote-explore-network-context-depth= is default 0; prompt with =read-number=,
+retry until nonnegative integer. Direct graph calls never consult saved history.
+
+* Universe and membership
+U = eligible files from =denote-directory-files= with text-only policy, Denote
+file/directory exclusions and =denote-explore-network-regex-ignore= applied.
+Only files with a valid Denote identifier belong to U. Build one exact ID index;
+duplicate IDs in U raise clear user-error. Do not reconcile duplicates.
+S = signed files in U under literal root: exact signature or component-prefix
+ancestry using real =denote-sequence-split= semantics, never raw regexp prefix.
+An invalid sequence signature can match itself, not unrelated descendants.
+Empty root selects all signed files; unsigned files never seed the sequence.
+Duplicate signatures in S raise user-error. Empty S is user-error; singleton
+and disconnected S nodes are valid. Numeric 1 is not ancestor of numeric 10.
+Hierarchy H uses immediate parent only, joining with the child's detected scheme;
+missing parent yields no edge, not a bridge to distant ancestor.
+
+L = actual directed Denote links within U, supported by current extractor.
+At positive depth scan eligible note sources once, then index incoming/outgoing
+adjacency. Do not traverse directory once per seed. Any correction to shared
+extractor occurrence behavior requires explicit parent decision; sequence-local
+extraction is preferred over silently changing other graph types.
+All S nodes seed distance 0. BFS treats links undirected only for reachability;
+=contextDistance= is minimum number of actual-link hops from any S node.
+Depth 0 exports S + H only and performs no link-body extraction. At depth d>0,
+export Vd, H and ALL actual directed edges with both endpoints in Vd (including
+frontier-to-frontier edges). Preserve reciprocal/self links and repeated source
+occurrences. Traversal never multiplies weight. Stop when frontier exhausted.
+Every exported endpoint resolves to an exported node.
+
+* Graph data
+Internal graph remains alist with list-valued =nodes= and =edges= (nil allowed
+for edges). Additive node fields: =sequenceMember= (t or :json-false),
+=contextDistance= (integer >=0). Existing fields remain. Signature can be nil;
+keywordless Sequence nodes use nil internally, [] in JSON (not empty string).
+Relationships: =kind= string "hierarchy" or "link", =weight= positive integer,
+=key= stable JSON encoding of =[kind,source,target]=, independent of ordering.
+Hierarchy weight=1; actual directed duplicate occurrences aggregate by endpoints.
+Keep H and L separate even with identical endpoints. Keep self links as loops.
+
+Node =degree= is incident relationship count (each self relation once), unweighted.
+=backlinks= remains weighted incoming relationship count for compatibility.
+=actualBacklinks= sums only actual incoming link occurrence weights;
+=actualDegree= counts incident actual-link records, self-link once.
+Browser must not label legacy =backlinks= as actual document backlinks in Sequence.
+
+Meta fields: =directed=t, =type="Sequence"=, =parameters=(root depth)=,
+=contextDepth= requested depth, =sequenceCount=, =contextCount=,
+=nodeCount=, =hierarchyEdgeCount=, =linkEdgeCount= and =linkOccurrenceCount=.
+Counts are for loaded/exported graph, not hidden whole-universe links.
+No density claim for typed Sequence graphs: display "N/A (mixed relationships)".
+Preserve existing statistics semantics for other graph types.
+
+Example Lisp singleton:
+#+begin_src emacs-lisp
+((meta (directed . t) (type . "Sequence") (parameters "1" 0)
+       (contextDepth . 0) (sequenceCount . 1) (contextCount . 0)
+       (nodeCount . 1) (hierarchyEdgeCount . 0) (linkEdgeCount . 0)
+       (linkOccurrenceCount . 0))
+ (nodes ((id . "20260101T000001") (name . "Root") (signature . "1")
+         (filename . "/fixture/20260101T000001==1--root.org")
+         (type . "org") (keywords) (sequenceMember . t) (contextDistance . 0)
+         (degree . 0) (backlinks . 0) (actualDegree . 0) (actualBacklinks . 0)))
+ (edges))
+#+end_src
+Corresponding JSON collection/boolean guarantees (other node fields omitted):
+#+begin_src json
+{"meta":{"type":"Sequence","parameters":["1",0],"contextDepth":0},
+ "nodes":[{"id":"20260101T000001","sequenceMember":true,
+            "contextDistance":0,"keywords":[]}],"edges":[]}
+#+end_src
+JSON exporters normalize Sequence collections to arrays, including empty arrays;
+context node =sequenceMember=false=, missing signature=null. Do not change legacy
+other-graph field shapes unnecessarily. DOT/GEXF retain full topology and weights,
+including parallel and reciprocal records; GEXF edge IDs must be unique.
+
+* Browser state and compatibility
+[tag:sequence_hero_identity]
+Sequence identity is persistent, independent of =selectedNodeId=. Old Sequence
+JSON lacking membership fields treats all nodes as sequence; other graphs do not.
+Absent/null collections normalize to []; legacy missing kind means hierarchy for
+Sequence and ordinary link otherwise. Legacy relation keys must remain unique,
+even if endpoints repeat. D3-mutated endpoint objects normalize to node IDs.
+
+Keep file-type fill. Sequence nodes have persistent halo and labels; context
+secondary; selected node gets separate stronger outline. Hierarchy vs actual
+links differ by stroke pattern/weight, not color alone. Typed overlaps and reverse
+links use deterministic distinct paths; self-links visible loops. Directed arrow
+colors follow relation styles; Keywords remain undirected with weighted strokes.
+
+All D3 node activation selects, highlights both incoming/outgoing incident
+relations and direct neighbors, and pans current node at current zoom. It never
+opens a note, fetches graph data, or changes x/y/fx/fy, alpha or simulation running
+state. Normal already-running simulation may drift naturally. Use stopped
+simulation snapshots for invariance checks, live simulation separately.
+Drag release does not activate. Manual gestures interrupt pan; no camera lock.
+Correct for SVG viewBox, CSS scaling and actual sidebar/rendered dimensions.
+
+Initial Sequence framing runs ONCE after alpha <=0.1 (or simulation end), using
+S bounds with 40 SVG-unit padding and zoom limits; singleton radius bounds work.
+Any user wheel/pointerdown/keyboard activation before framing cancels auto-fit.
+Never refit on ticks or override manual selection. Nonsequence legacy framing
+stays baseline. Reduced motion disables animated pan/framing.
+
+Labels shown when density predicate OR sequenceMember OR selected, provided node
+visible. Label-only change must not restart/reheat simulation. Community isolated
+filter targets graph nodes, not all circles; hidden selected node clears selection
+and status, labels/halos/tab stops. Hover previews remain independent of selection.
+Nodes expose accessible names, button role/tabindex, visible keyboard focus and
+pressed state; Enter/Space selects, Space prevents scrolling. Escape/clear button
+restores base style. Persistent aria-live selection status survives hover mouseout.
+New names/status inserted as text, never interpolated into HTML. Existing hover
+iframe behavior is preserved, not generalized to permission for node navigation.
+
+* Measurable visual rubric
+Fixtures under =tests/fixtures/=. Fixed hub fixture:
+=tests/fixtures/sequence-hub.json= contains 3 sequence nodes A/B/C at (-80,0),
+(0,0),(80,0), context hub X at (650,0), and 12 context leaves at x>=750;
+H=A→B→C; L=X→A plus X→each leaf. Deterministic D3 random source seed 0.42;
+stop simulation for geometric assertions. Node radius bound:
+max(context radius) <= min(sequence radius), and all radii finite and positive.
+Viewport 1280x800 CSS pixels, deviceScaleFactor=1, screenshot 1280x800 pixels;
+fixed-layout framing must center S, not X (center tolerance 2 SVG units).
+Test focus centers selected node within 2 rendered CSS pixels across zoom scales
+0.5/1/2 and sidebar widths 250/400. Capture hero screenshot before/after external
+selection and at minimum label density; persistent sequence halo/labels required.
+Large-graph integration also runs live layout, recording graph counts, timing,
+platform and actual screenshot evidence, not universal performance promises.
+
+* Large graph policy
+=denote-explore-network-context-warning-threshold= default 1000 loaded nodes,
+positive integer. Positive depth at or above threshold emits =display-warning=
+once with depth/node/edge counts. Below threshold none. Always report completion
+counts through =message=. Never silently truncate or cap depth/nodes. Normal C-g
+remains possible. Do not rescan to compute warnings. Threshold configurable for
+synthetic tests; no browser warning or interactive confirmation required.
