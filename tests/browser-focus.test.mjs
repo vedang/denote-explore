@@ -191,6 +191,23 @@ for(const type of ['Sequence','Community','Neighbourhood','Keywords']) {
   });
 }
 
+for(const key of ['Enter','Space']) {
+  test(`keyboard: animated ${key} centers without bubbling cancellation`,async t=>{
+    const view=await openGraph(t,await fixture(),{reducedMotion:'no-preference'});
+    const {page}=view;
+    await page.evaluate(()=>{__graph.setTransform(1.25,25,35);__graph.element('X').focus();});
+    const before=await page.evaluate(()=>({coords:__graph.coordinates(),alpha:__graph.simulation.alpha(),restarts:__simulationState.restarts}));
+    await page.keyboard.press(key);
+    assert.equal(await page.evaluate(()=>__graph.selected()),'X');
+    await page.waitForTimeout(400);
+    const error=await centerError(page,'X');
+    assert.ok(error.x<=2&&error.y<=2,`${key} did not center: ${JSON.stringify(error)}`);
+    assert.equal(await page.evaluate(()=>__graph.transform().k),1.25);
+    assert.deepEqual(await page.evaluate(()=>({coords:__graph.coordinates(),alpha:__graph.simulation.alpha(),restarts:__simulationState.restarts})),before);
+    await noNavigation(view);
+  });
+}
+
 test('status: malicious-looking selected names remain inert text',async t=>{
   const graph=await fixture();const name='<img src=x onerror="window.__injected=1">';
   graph.nodes.find(n=>n.id==='X').name=name;

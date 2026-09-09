@@ -23,6 +23,26 @@
 (defun denote-explore-test-encode (encoder graph)
   (with-temp-buffer (funcall encoder graph) (buffer-string)))
 
+(ert-deftest denote-explore-export-internal-sequence-keywords ()
+  (denote-explore-test-with-directory
+    (let ((plain (denote-explore-test-note 1 "1" (denote-explore-test-link 2)))
+          (tagged (denote-explore-test-note 3 "1=1")))
+      (denote-explore-test-note 2 nil)
+      (rename-file tagged (concat (file-name-sans-extension tagged) "__alpha_beta.org"))
+      ;; Keep legacy extractor/Community shapes; normalize only Sequence nodes.
+      (should (equal (alist-get 'keywords (denote-explore--network-extract-node plain)) ""))
+      (should (equal (alist-get 'keywords
+                               (denote-explore-test-node
+                                (denote-explore-network-community-graph "" t) 1)) ""))
+      (dolist (depth '(0 1))
+        (let ((graph (denote-explore-network-sequence-graph "1" t depth)))
+          (dolist (id (if (zerop depth) '(1) '(1 2)))
+            (let ((node (denote-explore-test-node graph id)))
+              (should (assq 'keywords node))
+              (should (null (alist-get 'keywords node)))))
+          (should (equal (alist-get 'keywords (denote-explore-test-node graph 3))
+                         '("alpha" "beta"))))))))
+
 (ert-deftest denote-explore-export-json-collections-and-booleans ()
   (dolist (singleton '(nil t))
     (let* ((graph (denote-explore-test-export-graph singleton))
