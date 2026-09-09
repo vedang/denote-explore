@@ -303,6 +303,29 @@
       links.forEach(link => {
           link.markerId = safeSvgId("arrow", link.key, allocatedSvgIds);
       });
+
+      // Assign lanes from stable relation keys, grouped by unordered endpoint pair.
+      // This keeps typed overlaps, reverse edges, and loop positions deterministic.
+      const relationsByEndpointPair = new Map();
+      links.forEach(relation => {
+          const endpoints = [String(relation.sourceId), String(relation.targetId)].sort();
+          const pairKey = JSON.stringify(endpoints);
+          const relations = relationsByEndpointPair.get(pairKey) || [];
+          relations.push(relation);
+          relationsByEndpointPair.set(pairKey, relations);
+      });
+      relationsByEndpointPair.forEach((relations, pairKey) => {
+          relations.sort((left, right) => left.key < right.key ? -1 : left.key > right.key ? 1 : 0);
+          relations.forEach((relation, index) => {
+              relation.geometry = {
+                  pairKey,
+                  lane: index - (relations.length - 1) / 2,
+                  index,
+                  count: relations.length,
+                  selfLoop: relation.sourceId === relation.targetId
+              };
+          });
+      });
       const data = {...importedData, meta, nodes, edges: links};
 
       const width = 1440;
@@ -357,49 +380,71 @@
 	    .domain([1, maxWeight]) // Map the range of weights
 	    .range(isKeywordType ? [2, 30] : [1, 1]); // Adjust the range
 
+      function nodeRadius(node) {
+          const degree = Number.isFinite(node && node.degree) ? node.degree : 0;
+          const radius = isKeywordType ? 15 : radiusScale(degree);
+          return Number.isFinite(radius) && radius > 0 ? radius : 7;
+      }
+
       const arrowMarkers = svg.append("defs");
 
-      // Pre-calculate refX for edges from normalized endpoint IDs.
-      links.forEach(d => {
-      const targetNode = nodeById.get(d.targetId);
-      const targetRadius = isKeywordType ? 15 : radiusScale(targetNode.degree); // Use constant radius if isKeywordType is true
-      d.refX = targetRadius + 2; // Dynamically calculate refX for alignment, with padding
+      // Paths clip to node boundaries, so marker tips use a fixed viewBox refX.
+      links.forEach(relation => {
+          relation.refX = 10;
       });
 
       // Marker IDs derive from relation keys through safe opaque IDs, never node names.
       const marker = arrowMarkers.selectAll("marker")
       .data(links, d => d.key)
       .join("marker")
+      .attr("class", "relation-marker")
+      .attr("data-relation-key", d => d.key)
       .attr("id", d => d.markerId)
       .attr("viewBox", "0 -5 10 10")
-      .attr("refX", d => d.refX) // Use the pre-calculated refX
+      .attr("refX", d => d.refX)
       .attr("refY", 0)
-      .attr("markerWidth", 10) // Adjust arrow size
-      .attr("markerHeight", 5) // Adjust arrow size
+      .attr("markerWidth", 10)
+      .attr("markerHeight", 5)
       .attr("orient", "auto");
 
       marker.selectAll("path")
       .data(d => [d])
       .join("path")
-      .attr("d", "M0,-5L10,0L0,5") // Arrow shape
-      .attr("fill", "#999")
+      .attr("class", "relation-marker-arrow")
+      .attr("d", "M0,-5L10,0L0,5")
       .attr("stroke", "none");
 
-      // Add links and use dynamically created markers
+      function relationClass(relation) {
+          return relation.kind === "hierarchy"
+              ? "relation relation-hierarchy"
+              : "relation relation-link";
+      }
+
+      // Add keyed relation paths and preserve edge hover behavior.
       const link = svgGroup.append("g")
-      .attr("stroke", "#999")
       .attr("stroke-opacity", 0.6)
-      // Binding and joining data
-      .selectAll("line")
+      .selectAll("path")
       .data(links, d => d.key)
-      .join("line")
-      // Styling the links
+      .join("path")
+      .attr("class", relationClass)
+      .attr("data-relation-key", d => d.key)
+      .attr("data-relation-kind", d => d.kind)
+      .attr("data-source-id", d => d.sourceId)
+      .attr("data-target-id", d => d.targetId)
+      .attr("data-marker-id", d => d.markerId)
+      .attr("fill", "none")
       .attr("stroke-width", d => weightScale(d.weight || 1))
-      // Add arrow markers
-      .attr("marker-end", d => data.meta.directed ? `url(#${d.markerId})` : null)
+      .attr("marker-end", d => !isKeywordType && data.meta.directed ? `url(#${d.markerId})` : null)
+
+      // Keep marker fills coupled to relation strokes for later style/highlight updates.
+      function updateRelationStrokes(strokeForRelation) {
+          link.attr("stroke", strokeForRelation);
+          marker.select("path").attr("fill", strokeForRelation);
+      }
+      updateRelationStrokes(() => "#999");
 
       // Add hover interaction for edges to show connection details in the sidebar
-      .on("mouseover", (event, d) => {
+      link.on("mouseover", (event, d) => {
           const edgeContent = `
           <div class="title">Connection Details</div>
           <div class="metadata"><strong>From:</strong> ${d.source.name}</div>
@@ -512,27 +557,85 @@
       // d3.forceLink mutates source/target into node objects; retain canonical IDs too.
       linkForce.links().forEach(normalizeLinkEndpoints);
 
-      // Update positions on each tick
+      function finiteCoordinate(value, fallback) {
+          return Number.isFinite(value) ? value : fallback;
+      }
+
+      function fallbackDirection(pairKey) {
+          let hash = 0;
+          for (const character of pairKey) hash = (hash * 31 + character.codePointAt(0)) >>> 0;
+          const angle = (hash / 0x100000000) * Math.PI * 2;
+          return {x: Math.cos(angle), y: Math.sin(angle)};
+      }
+
+      function selfLoopPath(relation, x, y, radius) {
+          const geometry = relation.geometry;
+          const angle = -Math.PI / 2 + geometry.index * (Math.PI * 2 / geometry.count);
+          const startAngle = angle - 0.65;
+          const endAngle = angle + 0.65;
+          const loopRadius = radius + 26 + Math.abs(geometry.lane) * 8;
+          const startX = x + Math.cos(startAngle) * radius;
+          const startY = y + Math.sin(startAngle) * radius;
+          const controlOneX = x + Math.cos(startAngle) * loopRadius;
+          const controlOneY = y + Math.sin(startAngle) * loopRadius;
+          const controlTwoX = x + Math.cos(endAngle) * loopRadius;
+          const controlTwoY = y + Math.sin(endAngle) * loopRadius;
+          const endX = x + Math.cos(endAngle) * radius;
+          const endY = y + Math.sin(endAngle) * radius;
+          return `M${startX},${startY}C${controlOneX},${controlOneY} ${controlTwoX},${controlTwoY} ${endX},${endY}`;
+      }
+
+      function relationPath(relation) {
+          const sourceX = finiteCoordinate(relation.source.x, width / 2);
+          const sourceY = finiteCoordinate(relation.source.y, height / 2);
+          const targetX = finiteCoordinate(relation.target.x, width / 2);
+          const targetY = finiteCoordinate(relation.target.y, height / 2);
+          const targetRadius = nodeRadius(relation.target);
+          if (relation.geometry.selfLoop) {
+              return selfLoopPath(relation, targetX, targetY, targetRadius);
+          }
+
+          let dx = targetX - sourceX;
+          let dy = targetY - sourceY;
+          let distance = Math.hypot(dx, dy);
+          if (distance === 0) {
+              const direction = fallbackDirection(relation.geometry.pairKey);
+              dx = direction.x;
+              dy = direction.y;
+              distance = 1;
+          }
+          const unitX = dx / distance;
+          const unitY = dy / distance;
+          const lane = relation.geometry.lane;
+          if (lane === 0) {
+              const endX = targetX - unitX * targetRadius;
+              const endY = targetY - unitY * targetRadius;
+              return `M${sourceX},${sourceY}L${endX},${endY}`;
+          }
+
+          // Keep reciprocal lanes on opposite global sides of their endpoint pair.
+          const sourceComesFirst = String(relation.sourceId) <= String(relation.targetId);
+          const normalX = sourceComesFirst ? -unitY : unitY;
+          const normalY = sourceComesFirst ? unitX : -unitX;
+          const curveOffset = lane * 24;
+          const controlX = (sourceX + targetX) / 2 + normalX * curveOffset;
+          const controlY = (sourceY + targetY) / 2 + normalY * curveOffset;
+          let approachX = targetX - controlX;
+          let approachY = targetY - controlY;
+          let approachLength = Math.hypot(approachX, approachY);
+          if (approachLength === 0) {
+              approachX = unitX;
+              approachY = unitY;
+              approachLength = 1;
+          }
+          const endX = targetX - (approachX / approachLength) * targetRadius;
+          const endY = targetY - (approachY / approachLength) * targetRadius;
+          return `M${sourceX},${sourceY}Q${controlX},${controlY} ${endX},${endY}`;
+      }
+
+      // Update positions on each tick without replacing keyed relation paths.
       function ticked() {
-      link
-      .attr("x1", d => d.source.x)
-      .attr("y1", d => d.source.y)
-      .attr("x2", d => {
-      const dx = d.target.x - d.source.x;
-      const dy = d.target.y - d.source.y;
-      const distance = Math.sqrt(dx * dx + dy * dy) || 1; // Avoid division by zero
-      const targetRadius = isKeywordType ? 15 : radiusScale(d.target.degree);
-      const offsetX = (dx / distance) * targetRadius;
-      return d.target.x - offsetX;
-      })
-      .attr("y2", d => {
-      const dx = d.target.x - d.source.x;
-      const dy = d.target.y - d.source.y;
-      const distance = Math.sqrt(dx * dx + dy * dy) || 1; // Avoid division by zero
-      const targetRadius = isKeywordType ? 15 : radiusScale(d.target.degree); // Exact node radius
-      const offsetY = (dy / distance) * targetRadius;
-      return d.target.y - offsetY;
-      });
+      link.attr("d", relationPath);
 
       node
       .attr("cx", d => d.x)
