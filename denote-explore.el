@@ -106,6 +106,14 @@ File type defined by `denote-explore-network-format'."
   :type '(choice (const :tag "No Ignore Regexp" nil)
                  (regexp :tag "Ignore using Regexp")))
 
+(defcustom denote-explore-network-context-depth 0
+  "Default number of link hops included in an interactive Sequence graph.
+
+`denote-explore-network-sequence' prompts for this value on every invocation.
+A valid context depth is a non-negative integer."
+  :group 'denote-explore
+  :type 'integer)
+
 (defcustom denote-explore-random-regex-ignore '()
   "Regular expression to exclude form random walks."
   :group 'denote-explore
@@ -256,7 +264,10 @@ Parameters define the previous network, i.e.:
 - `(\"keywords\")'
 - `(\"neighbourhood\" \"20240101T084408\" 3)'
 - `(\"community\" \"regex\")'
-- `(\"sequence) \"root signature\"'")
+- `(\"Sequence\" (\"root signature\" depth))'.
+
+Legacy Sequence configurations use a root string directly and regenerate at
+context depth zero.")
 
 ;;; STATISTICS
 ;; Count number of notes, attachments and keywords
@@ -1283,17 +1294,67 @@ TEXT-ONLY excludes attachments."
         (distances . ,distances)
         (edges . ,edges)))))
 
+(defun denote-explore--network-sequence-valid-depth-p (depth)
+  "Return non-nil when DEPTH is a non-negative integer."
+  (and (integerp depth) (>= depth 0)))
+
+(defun denote-explore--network-sequence-validate-depth (depth)
+  "Return DEPTH or signal `user-error' unless it is a non-negative integer."
+  (unless (denote-explore--network-sequence-valid-depth-p depth)
+    (user-error "Sequence context depth must be a non-negative integer: %S" depth))
+  depth)
+
+(defun denote-explore--network-sequence-read-context-depth ()
+  "Prompt until a non-negative integer Sequence context depth is entered."
+  (let (depth)
+    (while (not (denote-explore--network-sequence-valid-depth-p depth))
+      (setq depth
+            (read-number "Sequence context depth (integer >= 0): "
+                         denote-explore-network-context-depth))
+      (unless (denote-explore--network-sequence-valid-depth-p depth)
+        (message "Sequence context depth must be a non-negative integer")))
+    depth))
+
 (defun denote-explore-network-sequence (text-only)
   "Generate a graph of signature sequences from a selected root node.
-Optionally analyse TEXT-ONLY files."
+
+Prompt for context depth on each invocation.  TEXT-ONLY excludes attachments."
   (unless (featurep 'denote-sequence)
     (user-error "Network Sequence Graphs require denote-sequence to be loaded"))
   (let* ((signature-files (denote-explore--network-filter-files
 			   (denote-directory-files denote-signature-regexp nil text-only)))
 	 (signatures (mapcar #'denote-retrieve-filename-signature signature-files))
-	 (root (completing-read "Select root node (empty for all)" signatures)))
-    (setq denote-explore-network-previous `("Sequence" ,root))
-    (denote-explore-network-sequence-graph root text-only)))
+	 (root (completing-read "Select root node (empty for all)" signatures))
+         (depth (denote-explore--network-sequence-read-context-depth)))
+    (setq denote-explore-network-previous `("Sequence" (,root ,depth)))
+    (denote-explore-network-sequence-graph root text-only depth)))
+
+(defun denote-explore--network-sequence-normalize-query (root depth)
+  "Return validated `(ROOT DEPTH)' from Sequence graph arguments.
+
+ROOT may be a legacy root string or a saved `(ROOT DEPTH)' pair.  A saved pair
+cannot be combined with non-nil explicit DEPTH."
+  (cond
+   ((stringp root)
+    (list root (if (null depth)
+                   0
+                 (denote-explore--network-sequence-validate-depth depth))))
+   ((and (consp root) (stringp (car root))
+         (consp (cdr root)) (null (cddr root)))
+    (when depth
+      (user-error "Sequence query already includes a context depth"))
+    (list (car root)
+          (denote-explore--network-sequence-validate-depth (cadr root))))
+   (t
+    (user-error "Sequence query must be a root string or (ROOT DEPTH): %S" root))))
+
+(defun denote-explore--network-sequence-normalize-previous (previous)
+  "Return normalized saved Sequence query from PREVIOUS.
+
+PREVIOUS must use the two-element Sequence history form."
+  (unless (and (consp previous) (consp (cdr previous)) (null (cddr previous)))
+    (user-error "Malformed saved Sequence query: %S" previous))
+  (denote-explore--network-sequence-normalize-query (cadr previous) nil))
 
 (defun denote-explore--network-sequence-typed-edges (edges kind)
   "Add sequence relationship KIND and stable keys to counted EDGES."
@@ -1310,11 +1371,14 @@ Optionally analyse TEXT-ONLY files."
 
 (defun denote-explore-network-sequence-graph (root text-only &optional depth)
   "Generate a typed Denote sequence graph for ROOT through DEPTH link hops.
-Optionally analyse TEXT-ONLY files.  DEPTH defaults to zero."
+
+ROOT is either a legacy root string or a saved `(ROOT DEPTH)' pair.  Explicit
+DEPTH defaults to zero with a root string.  Optionally analyse TEXT-ONLY files."
   (unless (featurep 'denote-sequence)
     (user-error "Network Sequence Graphs require denote-sequence to be loaded"))
-  (let* ((depth (or depth 0))
-         (context (denote-explore--network-sequence-context root text-only depth))
+  (pcase-let* ((`(,root ,depth)
+                (denote-explore--network-sequence-normalize-query root depth))
+               (context (denote-explore--network-sequence-context root text-only depth))
          (files (alist-get 'files context))
          (sequence-files (alist-get 'sequence-files context))
          (distances (alist-get 'distances context))
@@ -1664,7 +1728,10 @@ to encode and display each graph format."
 Universal argument excludes attachments from the analysis (TEXT-ONLY)."
   (interactive "P")
   (if-let* ((graph-type (car denote-explore-network-previous))
-	    (query (car (cdr denote-explore-network-previous)))
+	    (query (if (equal graph-type "Sequence")
+                       (denote-explore--network-sequence-normalize-previous
+                        denote-explore-network-previous)
+                     (car (cdr denote-explore-network-previous))))
 	    (config (assoc graph-type denote-explore-graph-types))
 	    (regenerate-fn (plist-get (cdr config) :regenerate))
 	    (graph (funcall regenerate-fn query text-only)))
