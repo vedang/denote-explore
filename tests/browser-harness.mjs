@@ -47,7 +47,11 @@ window.__graph = {
     const p=new DOMPoint(d.x,d.y).matrixTransform(svgGroup.node().getScreenCTM());
     return {x:p.x,y:p.y}; },
   svgBounds() { const r=svg.node().getBoundingClientRect();
-    return {x:r.x,y:r.y,width:r.width,height:r.height}; }
+    const side=document.getElementById('sidebar');
+    const s=side?.getBoundingClientRect();
+    const right=s && s.left>r.left && s.left<r.right && getComputedStyle(side).display!=='none'
+      ? s.left : r.right;
+    return {x:r.x,y:r.y,width:right-r.left,height:r.height}; }
 };
 ticked();
 </script>`;
