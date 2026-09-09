@@ -155,3 +155,44 @@ test('statistics: typed counts depth and mixed-density label are honest', async 
   assert.doesNotMatch(text,/NaN|undefined/);
   assert.deepEqual(errors,[]);
 });
+
+for(const singleton of [false,true]){
+  test(`statistics: depth-zero ${singleton?'singleton':'hierarchy'} counts remain finite`,async t=>{
+    const graph=await fixture(singleton?'sequence-singleton':'sequence-small');
+    graph.nodes=graph.nodes.filter(n=>n.sequenceMember);
+    graph.edges=graph.edges.filter(e=>e.kind==='hierarchy');
+    for(const n of graph.nodes){
+      n.degree=graph.edges.filter(e=>e.source===n.id||e.target===n.id).length;
+      n.backlinks=graph.edges.filter(e=>e.target===n.id).length;
+      n.actualDegree=0;n.actualBacklinks=0;
+    }
+    Object.assign(graph.meta,{parameters:['1',0],contextDepth:0,sequenceCount:graph.nodes.length,
+      contextCount:0,nodeCount:graph.nodes.length,hierarchyEdgeCount:graph.edges.length,
+      linkEdgeCount:0,linkOccurrenceCount:0});
+    const {page,errors}=await openGraph(t,graph);
+    await page.locator('#info-button').click();
+    const text=await page.locator('.info-tooltip').innerText();
+    assert.match(text,/context depth\s*:?\s*0/i);
+    assert.match(text,new RegExp(`${graph.nodes.length}\\s+sequence`,'i'));
+    assert.match(text,/0\s+context/i);
+    assert.match(text,new RegExp(`${graph.edges.length}\\s+hierarchy`,'i'));
+    assert.match(text,/0\s+(actual[- ]?)?link/i);
+    assert.match(text,/0\s+(link\s+)?occurrences/i);
+    assert.match(text,/N\/A\s*\(mixed relationships\)/i);
+    assert.doesNotMatch(text,/NaN|undefined/);assert.deepEqual(errors,[]);
+  });
+}
+
+test('statistics: legacy Sequence does not invent actual-link metrics',async t=>{
+  const graph=await fixture();
+  graph.meta={type:'Sequence',directed:true,parameters:['1']};
+  for(const n of graph.nodes){delete n.sequenceMember;delete n.contextDistance;delete n.actualDegree;delete n.actualBacklinks;}
+  for(const e of graph.edges){delete e.kind;delete e.key;}
+  const {page,errors}=await openGraph(t,graph);
+  await page.locator('#info-button').click();
+  const text=await page.locator('.info-tooltip').innerText();
+  assert.match(text,/5\s+nodes/i);assert.match(text,/10\s+edges/i);
+  assert.match(text,/N\/A\s*\(legacy Sequence metrics unavailable\)/i);
+  assert.doesNotMatch(text,/\d+\s+actual[- ]link|NaN|undefined/i);
+  assert.deepEqual(errors,[]);
+});
