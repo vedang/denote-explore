@@ -223,6 +223,12 @@
           stroke-dasharray: 2 2;
       }
 
+      .selected-node {
+          stroke: #1f4d6b;
+          stroke-width: 4px;
+          stroke-dasharray: none;
+      }
+
       .sequence-relation-hierarchy {
           stroke-width: 2.5px;
           stroke-dasharray: none;
@@ -698,6 +704,46 @@
       .attr("class", "sequence-halo")
       .attr("r", d => nodeRadius(d) + 7);
 
+      let selectedNodeId = null;
+
+      function selectedNeighborhood(nodeId) {
+          const neighborIds = new Set([nodeId]);
+          const relationKeys = new Set();
+          (incidentRelationsByNodeId.get(nodeId) || []).forEach(relation => {
+              relationKeys.add(relation.key);
+              neighborIds.add(relation.sourceId);
+              neighborIds.add(relation.targetId);
+          });
+          return {neighborIds, relationKeys};
+      }
+
+      function updateNodeFocus() {
+          if (selectedNodeId === null) {
+              node.classed("selected-node", false).style("opacity", null);
+              link.style("stroke-opacity", null);
+              updateRelationStrokes(baseRelationStroke);
+              return;
+          }
+
+          const {neighborIds, relationKeys} = selectedNeighborhood(selectedNodeId);
+          node.classed("selected-node", d => d.id === selectedNodeId)
+              .style("opacity", d => neighborIds.has(d.id) ? 1 : 0.2);
+          link.style("stroke-opacity", relation => relationKeys.has(relation.key) ? 1 : 0.12);
+          updateRelationStrokes(relation => relationKeys.has(relation.key)
+                                ? "#1f4d6b" : baseRelationStroke(relation));
+      }
+
+      function selectNode(node) {
+          selectedNodeId = node.id;
+          updateNodeFocus();
+      }
+
+      // Kept separate so keyboard and clear-control work can reuse base-style recovery.
+      function clearNodeFocus() {
+          selectedNodeId = null;
+          updateNodeFocus();
+      }
+
       // Add nodes
       const node = svgGroup.append("g")
       .attr("stroke", "none")
@@ -708,9 +754,7 @@
       .attr("r", nodeRadius)
       .attr("fill", d => color(d.type))
       .on("click", (event, d) => {
-      if (!isKeywordType) { // Only open hyperlink if isKeywordType is false
-      window.open(d.filename, "_blank");
-      }
+          selectNode(d);
       })
       .on("mouseover", (event, d) => {
           // Check if the filename is an image, PDF, or a text document
