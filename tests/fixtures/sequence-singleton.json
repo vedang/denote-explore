@@ -1,0 +1,36 @@
+{
+  "meta": {
+    "type": "Sequence",
+    "directed": true,
+    "parameters": [
+      "1",
+      0
+    ],
+    "contextDepth": 0,
+    "sequenceCount": 1,
+    "contextCount": 0,
+    "nodeCount": 1,
+    "hierarchyEdgeCount": 0,
+    "linkEdgeCount": 0,
+    "linkOccurrenceCount": 0
+  },
+  "nodes": [
+    {
+      "id": "A",
+      "name": "A",
+      "filename": "/notes/A.org",
+      "type": "org",
+      "signature": "1",
+      "keywords": [],
+      "sequenceMember": true,
+      "contextDistance": 0,
+      "x": 350,
+      "y": 300,
+      "degree": 0,
+      "actualDegree": 0,
+      "backlinks": 0,
+      "actualBacklinks": 0
+    }
+  ],
+  "edges": []
+}

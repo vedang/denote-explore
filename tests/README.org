@@ -28,3 +28,30 @@ No Makefile exists. Syntax/byte compilation and ERT are native alternatives
 to unavailable =make format=, =make check=, and =make test=. Byte-compiled
 artifacts go under ignored =tests/artifacts/=, never alongside package source.
 Use =check-parens= and review formatting rather than mass-reformatting source.
+
+* Controlled browser
+Node >=20, npm, and the pinned Playwright Chromium binary are required.
+#+begin_src sh
+npm --prefix tests ci --ignore-scripts
+PLAYWRIGHT_BROWSERS_PATH="$PWD/tests/.deps/browsers" npm exec --prefix tests -- playwright install chromium
+sh tests/run-browser.sh smoke
+sh tests/run-browser.sh
+#+end_src
+Optional first argument is a JavaScript test-name regexp. =TASK_DIR= may name an
+existing task folder for screenshots; otherwise the runner creates a timestamped
+folder under ignored =.agents/plans/=. No personal Chrome, note directory or
+network access is used during tests. Setup alone downloads dependencies.
+
+=package-lock.json= pins archive integrity and versions (D3 7.9.0, Playwright
+1.58.2; Chromium 145.0.7632.6). D3 source https://github.com/d3/d3, installed
+from npm package =d3=; upstream LICENSE remains in =node_modules/d3/LICENSE=.
+SHA-256 of =d3/dist/d3.min.js=:
+=f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539=.
+
+Harness serves actual =denote-explore-network.html= after its real placeholders
+are replaced. Test-only wrapper seeds/stops simulation and exposes existing
+bindings; it does not copy application logic or add production test hooks.
+Popup calls and top-level navigation are trapped separately from canned hover
+iframe requests. Every test captures JS errors and a 1280x800 screenshot.
+=[ref:sequence_hero_identity]= fixture/radius/framing rubric lives in
+=sequence-context-contract.org=.

@@ -1,0 +1,171 @@
+{
+  "meta": {
+    "type": "Sequence",
+    "directed": true,
+    "parameters": [
+      "1",
+      1
+    ],
+    "contextDepth": 1,
+    "sequenceCount": 3,
+    "contextCount": 2,
+    "nodeCount": 5,
+    "hierarchyEdgeCount": 2,
+    "linkEdgeCount": 8,
+    "linkOccurrenceCount": 10
+  },
+  "nodes": [
+    {
+      "id": "A",
+      "name": "A",
+      "filename": "/notes/A.org",
+      "type": "org",
+      "signature": "1",
+      "keywords": [],
+      "sequenceMember": true,
+      "contextDistance": 0,
+      "x": 350,
+      "y": 300,
+      "degree": 4,
+      "actualDegree": 3,
+      "backlinks": 2,
+      "actualBacklinks": 2
+    },
+    {
+      "id": "B",
+      "name": "B",
+      "filename": "/notes/B.org",
+      "type": "org",
+      "signature": "1=1",
+      "keywords": [],
+      "sequenceMember": true,
+      "contextDistance": 0,
+      "x": 450,
+      "y": 300,
+      "degree": 5,
+      "actualDegree": 3,
+      "backlinks": 2,
+      "actualBacklinks": 1
+    },
+    {
+      "id": "C",
+      "name": "C",
+      "filename": "/notes/C.org",
+      "type": "org",
+      "signature": "1=1=1",
+      "keywords": [],
+      "sequenceMember": true,
+      "contextDistance": 0,
+      "x": 550,
+      "y": 300,
+      "degree": 3,
+      "actualDegree": 2,
+      "backlinks": 2,
+      "actualBacklinks": 1
+    },
+    {
+      "id": "X",
+      "name": "X",
+      "filename": "/notes/X.org",
+      "type": "org",
+      "signature": null,
+      "keywords": [],
+      "sequenceMember": false,
+      "contextDistance": 1,
+      "x": 600,
+      "y": 430,
+      "degree": 4,
+      "actualDegree": 4,
+      "backlinks": 2,
+      "actualBacklinks": 2
+    },
+    {
+      "id": "Y",
+      "name": "Y",
+      "filename": "/notes/Y.org",
+      "type": "org",
+      "signature": null,
+      "keywords": [],
+      "sequenceMember": false,
+      "contextDistance": 1,
+      "x": 450,
+      "y": 450,
+      "degree": 3,
+      "actualDegree": 3,
+      "backlinks": 4,
+      "actualBacklinks": 4
+    }
+  ],
+  "edges": [
+    {
+      "source": "A",
+      "target": "B",
+      "kind": "hierarchy",
+      "weight": 1,
+      "key": "[\"hierarchy\",\"A\",\"B\"]"
+    },
+    {
+      "source": "B",
+      "target": "C",
+      "kind": "hierarchy",
+      "weight": 1,
+      "key": "[\"hierarchy\",\"B\",\"C\"]"
+    },
+    {
+      "source": "A",
+      "target": "B",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"A\",\"B\"]"
+    },
+    {
+      "source": "B",
+      "target": "A",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"B\",\"A\"]"
+    },
+    {
+      "source": "B",
+      "target": "Y",
+      "kind": "link",
+      "weight": 3,
+      "key": "[\"link\",\"B\",\"Y\"]"
+    },
+    {
+      "source": "C",
+      "target": "C",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"C\",\"C\"]"
+    },
+    {
+      "source": "C",
+      "target": "X",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"C\",\"X\"]"
+    },
+    {
+      "source": "X",
+      "target": "A",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"X\",\"A\"]"
+    },
+    {
+      "source": "X",
+      "target": "Y",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"X\",\"Y\"]"
+    },
+    {
+      "source": "Y",
+      "target": "X",
+      "kind": "link",
+      "weight": 1,
+      "key": "[\"link\",\"Y\",\"X\"]"
+    }
+  ]
+}
