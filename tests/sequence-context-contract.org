@@ -121,8 +121,10 @@ simulation snapshots for invariance checks, live simulation separately.
 Drag release does not activate. Manual gestures interrupt pan; no camera lock.
 Correct for SVG viewBox, CSS scaling and actual sidebar/rendered dimensions.
 
-Initial Sequence framing runs ONCE after alpha <=0.1 (or simulation end), using
-S bounds with 40 SVG-unit padding and zoom limits; singleton radius bounds work.
+[tag:sequence_final_framing]
+Initial Sequence framing runs ONCE at simulation end, from settled coordinates,
+using S bounds with 40 SVG-unit padding and zoom limits; singleton radius bounds
+work. Cooling alpha <=0.1 is not settled and must not trigger the sole fit.
 Any user wheel/pointerdown/keyboard activation before framing cancels auto-fit.
 Never refit on ticks or override manual selection. Nonsequence legacy framing
 stays baseline. Reduced motion disables animated pan/framing.

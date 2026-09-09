@@ -15,11 +15,12 @@ export async function fixture(name = 'sequence-small') {
 // Instrumentation only: production logic is always read from the real template.
 function instrumentation(stop) {
   return `<script>
-    window.__simulationState = { restarts: 0 };
+    window.__simulationState = { restarts: 0, ended: false };
     const originalForceSimulation = d3.forceSimulation;
     d3.forceSimulation = function(...args) {
       const sim = originalForceSimulation(...args);
       sim.randomSource(d3.randomLcg(0.42));
+      sim.on('end.test-probe', () => { window.__simulationState.ended = true; });
       const restart = sim.restart;
       sim.restart = function(...values) {
         window.__simulationState.restarts++;
@@ -38,6 +39,9 @@ window.__graph = {
   get svg() { return svg; }, get group() { return svgGroup; },
   get simulation() { return simulation; }, get zoom() { return zoom; },
   tick(n = 0) { simulation.tick(n); ticked(); },
+  // Invoke the real registered end callback for stopped fixed-coordinate tests.
+  finish() { simulation.stop(); simulation.alpha(simulation.alphaMin() / 2);
+    ticked(); simulation.on('end.sequence-frame').call(simulation); },
   selected() { return typeof selectedNodeId === 'undefined' ? null : selectedNodeId; },
   element(id) { return node.filter(d => d.id === id).node(); },
   transform() { const z = d3.zoomTransform(svg.node()); return {x:z.x,y:z.y,k:z.k}; },

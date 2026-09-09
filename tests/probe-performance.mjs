@@ -18,9 +18,9 @@ for(const {name,packet} of cases){
     const start=performance.now();
     const view=await openGraph({name,after:fn=>cleanup.push(fn)},packet.graph,{html:packet.html,stop:false});
     const loadMs=performance.now()-start;
-    await view.page.waitForFunction(()=>__graph.simulation.alpha()<=0.09,null,{timeout:30000});
+    // [ref:sequence_final_framing] Observe actual end; never freeze mid-layout.
+    await view.page.waitForFunction(()=>__simulationState.ended,null,{timeout:60000});
     const settledMs=performance.now()-start;
-    await view.page.evaluate(()=>__graph.simulation.stop());
     await view.page.locator('#density-slider').evaluate(el=>{el.value=el.min;el.dispatchEvent(new Event('input',{bubbles:true}));});
     const shape=await view.page.evaluate(()=>({
       nodes:__graph.nodes.length,edges:__graph.links.length,

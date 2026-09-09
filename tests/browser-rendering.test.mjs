@@ -116,7 +116,11 @@ test('hero: relationship kind is distinguished beyond color', async t => {
 
 test('framing: sequence-only bounds fit once not on later ticks', async t => {
   const {page}=await openGraph(t,await fixture('sequence-hub'));
+  const initial=await page.evaluate(()=>__graph.transform());
   await page.evaluate(()=>{__graph.simulation.alpha(0.09);__graph.tick();});
+  assert.deepEqual(await page.evaluate(()=>__graph.transform()),initial,
+    'Cooling layout must not consume the one-shot fit before final coordinates');
+  await page.evaluate(()=>__graph.finish());
   const error=await page.evaluate(()=>{
     const hero=__graph.nodes.filter(n=>n.sequenceMember);
     const xs=hero.flatMap(n=>{const r=+__graph.element(n.id).getAttribute('r');return[n.x-r,n.x+r];});
@@ -128,7 +132,7 @@ test('framing: sequence-only bounds fit once not on later ticks', async t => {
   assert.ok(error<=2,`hero framing center error ${error}px`);
   await page.evaluate(()=>__graph.setTransform(1.25,25,35));
   const transform=await page.evaluate(()=>__graph.transform());
-  await page.evaluate(()=>__graph.tick(10));
+  await page.evaluate(()=>{__graph.tick(10);__graph.finish();});
   assert.deepEqual(await page.evaluate(()=>__graph.transform()),transform);
 });
 
@@ -139,7 +143,7 @@ test('framing: user input cancels delayed automatic fit', async t => {
     __graph.setTransform(0.8,10,20);
   });
   const transform=await page.evaluate(()=>__graph.transform());
-  await page.evaluate(()=>{__graph.simulation.alpha(0.09);__graph.tick(5);});
+  await page.evaluate(()=>{__graph.simulation.alpha(0.09);__graph.tick(5);__graph.finish();});
   assert.deepEqual(await page.evaluate(()=>__graph.transform()),transform);
 });
 
