@@ -107,10 +107,12 @@ File type defined by `denote-explore-network-format'."
                  (regexp :tag "Ignore using Regexp")))
 
 (defcustom denote-explore-network-context-depth 0
-  "Default number of link hops included in an interactive Sequence graph.
+  "Default actual-link context depth for an interactive Sequence graph.
 
-`denote-explore-network-sequence' prompts for this value on every invocation.
-A valid context depth is a non-negative integer."
+`denote-explore-network-sequence' prompts on every invocation using this value.
+Depth zero creates hierarchy-only Sequence graph without extracting note-body
+links; a positive depth expands incoming and outgoing actual links.  A valid
+context depth is a non-negative integer."
   :group 'denote-explore
   :type 'integer)
 
@@ -118,7 +120,8 @@ A valid context depth is a non-negative integer."
   "Loaded node count that warns about a large Sequence context graph.
 
 Positive context generations at or above this positive integer report their
-requested depth and loaded node and edge counts with `display-warning'."
+requested depth and loaded node and edge counts with `display-warning'.  The
+warning never truncates the requested context."
   :group 'denote-explore
   :type '(integer :match (lambda (_widget value)
                             (and (integerp value) (> value 0)))))
@@ -250,7 +253,7 @@ PROPERTY-LIST is a plist that consists of three elements:
      :generate denote-explore-network-keywords
      :regenerate denote-explore-network-keywords-graph)
     ("Sequence"
-     :description "Hierarchical relationship between signatures"
+     :description "Signature hierarchy with optional actual-link context"
      :generate denote-explore-network-sequence
      :regenerate denote-explore-network-sequence-graph
      :feature denote-sequence))
@@ -275,8 +278,8 @@ Parameters define the previous network, i.e.:
 - `(\"community\" \"regex\")'
 - `(\"Sequence\" (\"root signature\" depth))'.
 
-Legacy Sequence configurations use a root string directly and regenerate at
-context depth zero.")
+Sequence history saves its root and context depth.  Legacy Sequence
+configurations use a root string directly and regenerate at context depth zero.")
 
 ;;; STATISTICS
 ;; Count number of notes, attachments and keywords
@@ -997,7 +1000,8 @@ of a file."
   "Add actual-link metrics to NODES from typed actual LINK-EDGES.
 
 `actualDegree' counts incident actual-link records without weights.  A loop is
-incident once.  `actualBacklinks' sums weights of incoming actual links."
+incident once.  `actualBacklinks' sums weights of incoming actual links.  These
+exclude hierarchy relationships retained by legacy `degree' and `backlinks'."
   (mapcar
    (lambda (node)
      (let ((node-id (alist-get 'id node))
@@ -1016,7 +1020,7 @@ incident once.  `actualBacklinks' sums weights of incoming actual links."
 
 (defun denote-explore--network-filter-files (files)
   "Remove files matching `denote-explore-network-regex-ignore' from Denote FILES.
-Removes selected files from neighbourhood or community visualisation."
+Removes selected files from community, neighbourhood, and Sequence graphs."
   (let ((ignore (if denote-explore-network-regex-ignore
 		    (denote-directory-files denote-explore-network-regex-ignore)
 		  nil)))
@@ -1266,11 +1270,12 @@ Signal `user-error' when FILES contains duplicate identifiers."
         (puthash identifier file index)))))
 
 (defun denote-explore--network-sequence-context (root text-only depth)
-  "Return sequence context for ROOT up to link traversal DEPTH.
+  "Return sequence context for ROOT up to actual-link traversal DEPTH.
 
 The returned alist contains selected sequence files, included files, minimum
-link distances, and occurrence-preserving links within eligible files.
-TEXT-ONLY excludes attachments."
+link distances, and occurrence-preserving links within eligible files.  At a
+positive DEPTH, all selected files seed incoming and outgoing traversal; at
+zero, no note-body links are extracted.  TEXT-ONLY excludes attachments."
   (let* ((universe (denote-explore--network-sequence-eligible-files text-only))
          (id-index (denote-explore--network-sequence-id-index universe))
          (sequence-files
@@ -1342,9 +1347,10 @@ TEXT-ONLY excludes attachments."
     depth))
 
 (defun denote-explore-network-sequence (text-only)
-  "Generate a graph of signature sequences from a selected root node.
+  "Generate a signature hierarchy with optional actual-link context.
 
-Prompt for context depth on each invocation.  TEXT-ONLY excludes attachments."
+Prompt for root and context depth on each invocation.  Depth zero is
+hierarchy-only.  TEXT-ONLY excludes attachments."
   (unless (featurep 'denote-sequence)
     (user-error "Network Sequence Graphs require denote-sequence to be loaded"))
   (let* ((signature-files (denote-explore--network-filter-files
@@ -1398,8 +1404,11 @@ PREVIOUS must use the two-element Sequence history form."
 (defun denote-explore-network-sequence-graph (root text-only &optional depth)
   "Generate a typed Denote sequence graph for ROOT through DEPTH link hops.
 
-ROOT is either a legacy root string or a saved `(ROOT DEPTH)' pair.  Explicit
-DEPTH defaults to zero with a root string.  Optionally analyse TEXT-ONLY files."
+Depth zero contains signature hierarchy only.  A positive depth expands actual
+Denote links in both directions from all selected sequence members, then keeps
+all directed links induced by loaded nodes.  ROOT is either a legacy root
+string or a saved `(ROOT DEPTH)' pair.  Explicit DEPTH defaults to zero with a
+root string.  Optionally analyse TEXT-ONLY files."
   (unless (featurep 'denote-sequence)
     (user-error "Network Sequence Graphs require denote-sequence to be loaded"))
   (pcase-let* ((`(,root ,depth)
@@ -1731,7 +1740,7 @@ Output is saved to `denote-explore-network-directory'."
   Links to notes not matching the regular expression are pruned.
 - Neighbourhood: Network of notes from a root at a given depth.
   Depth = 1 notes linked to root; depth 2: notes linked to linked notes, etc.
-- Sequence: Hierarchy of signatures, split at the = symbol.
+- Sequence: Signature hierarchy with optional actual-link context.
 - Keywords: Network of keywords.  Each note with two or more keywords
   forms a complete graph, which are merged into a weighted undirected graph.
 
@@ -1792,7 +1801,10 @@ to encode and display each graph format."
 ;;;###autoload
 (defun denote-explore-network-regenerate (&optional text-only)
   "Recreate the most recent Denote graph with external software.
-Universal argument excludes attachments from the analysis (TEXT-ONLY)."
+
+Sequence history retains root and context depth; legacy root-only history uses
+zero depth.  Universal argument excludes attachments from the analysis
+(TEXT-ONLY)."
   (interactive "P")
   (if-let* ((graph-type (car denote-explore-network-previous))
 	    (query (if (equal graph-type "Sequence")

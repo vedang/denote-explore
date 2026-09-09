@@ -139,16 +139,16 @@ Denote-Explorer provides three types of network diagrams to explore the relation
 
 1. Community: Notes matching a regular expression
 2. Neighbourhood: Search n-deep in a selected note
-3. Sequence: Visualise a hierarchical sequence
+3. Sequence: Visualise a signature hierarchy with optional linked-note context
 4. Keywords: Relationships between keywords
 
 The package exports and displays these in one of three formats, with JSON displayed in HTML / D3.js files as the default. Other options are GraphViz and GEXF.
 
 You create a network with the ~denote-explore-network~ command. This command will ask the user to select the type of network to create. Each network type requires additional inputs to analyse to a defined part of your Denote files.
 
-The ~denote-explore-network-regenerate~ command recreates the previous graph with the same parameters, which is useful when changing the structure of your notes and you like to see the result visualised without having to re-enter the parameters.
+The ~denote-explore-network-regenerate~ command recreates the previous graph with the same parameters, which is useful when changing the structure of your notes and you like to see the result visualised without having to re-enter the parameters.  Generated JSON, HTML, DOT and GEXF files are snapshots: regenerate them after changing notes, graph options, or the D3 template.  Sequence history saves both its root and context depth.  Older saved Sequence queries containing only a root remain valid and regenerate at depth zero.
 
-Using the universal argument =C-u= before issuing these two command (re)generates a network excluding attachments. The ~denote-excluded-files-regexp~ variable can contain a regular expression of files that are excluded from visualisation.
+Using the universal argument =C-u= before issuing these two commands (re)generates a network excluding attachments.  This text-only policy also applies to new and legacy Sequence queries. The ~denote-excluded-files-regexp~ variable can contain a regular expression of files that are excluded from visualisation.
 
 ** Community of Notes
 A community graph displays all notes matching a regular expression and their connections. The example below indicates the community that contains the =_emacs= regular expression, within the dashed line. The algorithm prunes any links to non-matching notes, which in the example below is the note with the =_vim= keyword.
@@ -200,7 +200,7 @@ The ~denote-explore-network-regex-ignore~ variable lets you define a regular exp
 ** Sequences Network
 The `denote-sequence' package provides an optional extension to `denote' for naming files with a sequence scheme. The package lets the user assign hierarchical relationships between files using signatures, such that the contents of one logically follow or complement those of another. For more information see [[info:denote-sequence][info denote-sequence]]. 
 
-For example a note with signature =1=a= is the child of a note with signature =1= and a note with signature =1=b= is its sibling. The note with signature =1=a=1= is the child of =1=a= and the grandchild of =1=, and so forth. In a sequence network, links exist independent of any Denote links inside a note, the relationship is only based on the hierarchy of the signatures.
+For example a note with signature =1=a= is the child of a note with signature =1= and a note with signature =1=b= is its sibling. The note with signature =1=a=1= is the child of =1=a= and the grandchild of =1=, and so forth.  These immediate-parent hierarchy relationships are separate from actual Denote links in note contents.
 
 #+begin_example
 ┌─────┐    ┌─────┐    ┌─────┐  
@@ -213,9 +213,15 @@ For example a note with signature =1=a= is the child of a note with signature =1
 
 The content of the signatures can be either numbers or letters as the order of children is not taken into consideration. These sequences can go on to many generations, building a family tree of your notes. These sequences are the basic building block of the popular Zettelkasten methodology.
 
-Users of the `denote-sequence'  package can generate a sequence graph using ~denote-explore-network~. Select the signature of the root node (note =1= in the diagram) as the starting point. When not selecting any signature, all Denote files with a signature are included in the visualisation.
+Users of the `denote-sequence' package can generate a Sequence graph using ~denote-explore-network~. Select the signature of the root node (note =1= in the diagram) as the starting point. When not selecting any signature, all eligible Denote files with a signature are included.  Eligibility follows the normal Denote file and directory exclusions, the text-only choice, and ~denote-explore-network-regex-ignore~; only files with a valid Denote identifier participate.
 
-The ~denote-explore-network-regex-ignore~ variable lets you define a regular expression of notes exclude from neighbourhood networks.
+Each interactive generation prompts for a non-negative context depth.  Its suggested default is the customizable ~denote-explore-network-context-depth~, initially zero.  At depth zero, the graph contains selected sequence notes and only their immediate-parent hierarchy edges; it does not read note bodies to extract links.
+
+At a positive depth, every selected sequence note is a distance-zero source.  Denote-Explorer scans each eligible note source once, expands both incoming and outgoing actual Denote links for the requested number of hops, and includes every directed actual link whose endpoints are loaded.  Thus the exported context is an induced directed graph, including reciprocal, self, and frontier-to-frontier links.  Repeated actual links aggregate into their edge weight without changing reachability; hierarchy edges remain separate even when they have the same endpoints as an actual link.
+
+Sequence metadata reports selected and context-node counts, hierarchy-edge and actual-link counts, and actual-link occurrences.  `degree' and `backlinks' retain their mixed-relationship meanings: degree counts incident relationship records and backlinks sum incoming relationship weights.  `actualDegree' and `actualBacklinks' report only actual Denote-link records and incoming actual-link occurrence weights.  This distinction prevents hierarchy relationships from being presented as document backlinks.
+
+Positive-depth graphs at or above ~denote-explore-network-context-warning-threshold~ (default 1000 loaded nodes) issue one Emacs warning with requested depth and loaded node and edge counts.  The warning never truncates nodes, edges, or depth.
 
 ** Keyword Network
 The last available method to visualise your Denote collection is to develop a network of keywords. Two keywords are connected when used in the same note.
@@ -265,15 +271,19 @@ The Denote-Explorer network algorithm consists of four steps:
 ** D3.js
 [[https://d3js.org/][D3.js]] is a JavaScript library for visualising data. This method provides an aesthetically pleasing and interactive view of the structure of your notes. Denote-Explorer stores the desired network as a JSON file. This JSON file is merged with a HTML / JavaScript template to visualise the network. Emacs invokes your default internet browser to view the network. 
 
-Hover over any node to reveal its name and relevant metadata. For neighbourhood and community graphs, when the note is an image or PDF file, a preview appears in the tooltip. Clicking on a node opens the relevant file in the browser, or whatever application the browser associates with the relevant file type.
+Hover over any node to reveal its name and relevant metadata. For neighbourhood and community graphs, when the note is an image or PDF file, a preview appears in the tooltip.  Hover previews remain available independently of node focus.
 
-For community and neighbourhood graphs, the diameter of nodes is proportional to their degree. Thus, the most linked note in your query will be the most visible. The colours indicate the file type of each node. The size of nodes in a network graph is the same for all.
+In every D3 graph type, including Keywords, click a node or press =Enter= or =Space= on its keyboard-focused node to select it.  Selection highlights the node, its incoming and outgoing relationships, and direct neighbours, then pans that node into view at the current zoom.  It never opens a note or fetches more graph data.  Press =Escape= or use the Clear focus button to restore the base styling.  When the operating system requests reduced motion, focus pans and Sequence framing apply without animation.
 
-For nodes with a degree greater than two, the name is displayed outside the node.
+A Sequence graph frames its sequence members once when its D3 simulation ends, using settled coordinates.  It does not fit early from a cooling alpha value, refit on ticks, or override a prior gesture or selection.
+
+For community and neighbourhood graphs, node size increases with degree. The colours indicate the file type of each node; keyword nodes have equal sizes.  Sequence members retain a halo and label independently of selection, while context nodes are no larger than the smallest sequence member.  Hierarchy relationships use solid strokes and actual links use dashed strokes.
+
+The label-density slider controls ordinary labels without restarting the layout.  Visible sequence members and the selected node keep their labels at every density setting.
 
 In keyword graphs, the thickness of the edges indicates the number of times two keywords are associated with each other.
 
-The info button shows the type of network and provides some basic statistics, such as the number of nodes (files) and edges (links) and the network density. The density of a network is the ratio between the number of edges and the potential number of edges. A density of zero, as such means that no nodes are connected. In a network with a density of one all nodes are connected to each other.
+The info button shows the type of network and loaded node and relationship counts.  Sequence graphs also report context depth, sequence/context counts, hierarchy/actual-link counts, and actual-link occurrences.  Their density is shown as =N/A (mixed relationships)= rather than comparing different relationship kinds as ordinary links.  Old Sequence data without actual-link metrics explicitly reports those metrics as unavailable.  Other graph types retain their existing network-density statistics.
 
 For community graphs the panel also provides the option to show or hide isolated nodes to increase clarity. Neighbourhood and keyword graphs by their definition do not have isolated nodes.
 
@@ -286,12 +296,14 @@ You can customise the output of the network files by modifying the template. The
 - ={{json-content}}=: The generated JSON file with the network definition
 - ={{d3-colourscheme}}=: Content of ~denote-explore-network-d3-colours~. this variable assigns a colour palette for the node file types. You can choose between any of the available categorical colour schemes in the D3 package. Colours are assigned in the graph in order of appearance in the JSON file, so file types can have different colours in different graphs.
 
+Custom templates made before Sequence context and focus support can ignore the additive Sequence fields, but must be updated to render the Sequence-member hero styling and focus controls.  Regenerate existing HTML after updating its template or graph data; generated HTML embeds a snapshot rather than tracking files live.
+
 ** GraphViz
 [[https://graphviz.org/][GraphViz]] is an open-source graph visualisation software toolkit, ideal for this task. The Denote-Explorer software saves the graph in the DOT language as a =.gv= file. The GraphViz software converts the DOT code to an =SVG= file.
 
 You will need to install GraphViz to enable this functionality. Denote-Explorer will raise an error when trying to create a GraphViz graph without the required external software available.
 
-Hover over any node to reveal its name and relevant metadata. Clicking on any node in a community or neighbourhood graph opens the relevant file in the browser, or whatever application the browser associates with the relevant file type.
+GraphViz SVG node hyperlinks remain available for note nodes.  D3 node focus, keyboard controls, panning, and Sequence framing are D3-only interactions.
 
 For community and neighbourhood graphs, the diameter of nodes is proportional to their degree. Thus, the most linked note in your query will be the most visible. When generating a neighbourhood, the source node is marked in a contrasting colour.
 
@@ -301,7 +313,7 @@ The diameter of nodes are sized relative to their degree. Thus, the most referen
 
 The configurable ~denote-explore-network-graphviz-header~ variable defines the basic settings for GraphViz graphs, such as the layout method and default node and edge settings.
 
-The ~denote-explore-network-graphviz-filetype~ variable defines the GraphViz output format. SVG (the default) or PDF provide the best results.
+The ~denote-explore-network-graphviz-filetype~ variable defines the GraphViz output format. SVG (the default) or PDF provide the best results.  DOT and GEXF exports retain the loaded Sequence topology and edge weights, including expanded actual-link context; they do not add D3 interactions.
 
 ** Graph Exchange XML Format
 The first two formats an insight into parts of your knowledge network, but there is a lot more you can do with this type of information. While GraphViz and D3 are suitable for analysing sections of your network, this third option is ideal for storing the complete Denote network for further analysis.
@@ -340,6 +352,9 @@ The configuration below customises all available variables and binds all availab
     (denote-explore-network-filename "denote-network")
     (denote-explore-network-keywords-ignore "<keywords list>")
     (denote-explore-network-regex-ignore "<regex>")
+    ;; Sequence link-context prompt default and large-context warning threshold
+    (denote-explore-network-context-depth 0)
+    (denote-explore-network-context-warning-threshold 1000)
     (denote-explore-network-format 'd3.js)
     (denote-explore-network-d3-colours 'SchemeObservable10)
     (denote-explore-network-d3-js "https://d3js.org/d3.v7.min.js")
