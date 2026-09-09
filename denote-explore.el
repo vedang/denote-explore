@@ -114,6 +114,15 @@ A valid context depth is a non-negative integer."
   :group 'denote-explore
   :type 'integer)
 
+(defcustom denote-explore-network-context-warning-threshold 1000
+  "Loaded node count that warns about a large Sequence context graph.
+
+Positive context generations at or above this positive integer report their
+requested depth and loaded node and edge counts with `display-warning'."
+  :group 'denote-explore
+  :type '(integer :match (lambda (_widget value)
+                            (and (integerp value) (> value 0)))))
+
 (defcustom denote-explore-random-regex-ignore '()
   "Regular expression to exclude form random walks."
   :group 'denote-explore
@@ -1442,8 +1451,17 @@ DEPTH defaults to zero with a root string.  Optionally analyse TEXT-ONLY files."
                        (linkEdgeCount . ,(length link-edges))
                        (linkOccurrenceCount .
                                             ,(cl-loop for edge in link-edges
-                                                      sum (or (alist-get 'weight edge) 1))))))
-    `((meta . ,meta-alist) (nodes . ,nodes-metrics) (edges . ,edges))))
+                                                      sum (or (alist-get 'weight edge) 1)))))
+         (node-count (length files))
+         (edge-count (length edges))
+         (summary (format "Sequence context depth %d loaded: %d nodes, %d edges"
+                          depth node-count edge-count))
+         (graph `((meta . ,meta-alist) (nodes . ,nodes-metrics) (edges . ,edges))))
+    (when (and (> depth 0)
+               (>= node-count denote-explore-network-context-warning-threshold))
+      (display-warning 'denote-explore summary :warning))
+    (message "%s" summary)
+    graph))
 
 (defun denote-explore--network-sequence-member-p (root signature)
   "Return non-nil when SIGNATURE is ROOT or its structural descendant."
