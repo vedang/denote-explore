@@ -1,4 +1,5 @@
 #+title: Denote Explorer: Explore your Denote digital garden
+#+author: Peter Prevos
 #+texinfo_dir_category: Emacs misc features
 #+texinfo_dir_title: Denote Explorer: (denote-explore)
 #+texinfo_dir_name: Denote Explorer

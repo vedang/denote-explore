@@ -98,3 +98,16 @@ inside the viewport; it does not stop a still-cooling layout. Override
 =PERFORMANCE_NOTE_COUNT= only within 5..5000. Timings exclude fixture creation
 and are machine-local observations, not universal latency claims. Direct harness
 imports default to the pinned local browser cache too.
+
+* Distributed manuals
+From the repository root, regenerate (never hand-edit) the distributed manuals:
+#+begin_src sh
+emacs --batch -Q --eval '(progn (require (quote org)) (require (quote ox-texinfo)) (find-file "denote-explore.org") (org-texinfo-export-to-texinfo))'
+makeinfo --no-split --output=denote-explore.info denote-explore.texi
+#+end_src
+Verified with Emacs 30.2, bundled Org 9.7.11 / ox-texinfo, and GNU Texinfo 7.3.
+Repeat export must leave both files byte-identical with these versions. Other
+versions may reflow output; inspect such changes separately from content edits.
+Explicit Org =#+author= preserves existing Peter Prevos credit independently of
+=user-full-name=. Validation also checks unique nodes, resolving menu targets,
+and matching Texinfo/Info node sets.
