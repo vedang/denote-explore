@@ -441,11 +441,12 @@
           ? "pending" : "disabled";
 
       // Create a zoom behaviour
+      let applyingCameraMotion = false;
       const zoom = d3.zoom()
 	    .scaleExtent([0.1, 4]) // Zoom scale limits
 	    .on("zoom", (event) => {
 		svgGroup.attr("transform", event.transform); // Apply zoom
-                if (event.sourceEvent) cancelSequenceFrame();
+                if (event.sourceEvent || !applyingCameraMotion) cancelSequenceFrame();
 	    });
 
       // Create the SVG container with zoom functionality
@@ -598,7 +599,9 @@
 
       function cancelSequenceFrame() {
           if (sequenceFrameState === "pending") sequenceFrameState = "cancelled";
+          applyingCameraMotion = false;
           svg.interrupt("sequence-frame");
+          svg.interrupt("focus-pan");
       }
 
       function frameSequenceOnce() {
@@ -607,9 +610,13 @@
           if (!transform) return;
           sequenceFrameState = "applied";
           if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-              svg.call(zoom.transform, transform);
+              applyCameraTransform(transform);
           } else {
-              svg.transition("sequence-frame").duration(250).call(zoom.transform, transform);
+              applyingCameraMotion = true;
+              svg.transition("sequence-frame").duration(250)
+                  .on("end.sequence-frame-state interrupt.sequence-frame-state cancel.sequence-frame-state",
+                      () => { applyingCameraMotion = false; })
+                  .call(zoom.transform, transform);
           }
       }
 
@@ -733,9 +740,49 @@
                                 ? "#1f4d6b" : baseRelationStroke(relation));
       }
 
+      function focusedNodeTransform(node) {
+          const viewport = visibleSvgViewport();
+          const currentTransform = d3.zoomTransform(svg.node());
+          if (!viewport || !Number.isFinite(node.x) || !Number.isFinite(node.y)
+              || !Number.isFinite(currentTransform.k) || currentTransform.k <= 0) return null;
+          const centerX = viewport.user.x + viewport.user.width / 2;
+          const centerY = viewport.user.y + viewport.user.height / 2;
+          return d3.zoomIdentity
+              .translate(centerX - node.x * currentTransform.k,
+                         centerY - node.y * currentTransform.k)
+              .scale(currentTransform.k);
+      }
+
+      function applyCameraTransform(transform) {
+          applyingCameraMotion = true;
+          try {
+              svg.call(zoom.transform, transform);
+          } finally {
+              applyingCameraMotion = false;
+          }
+      }
+
+      function panFocusedNode(node) {
+          cancelSequenceFrame();
+          const transform = focusedNodeTransform(node);
+          if (!transform) return;
+          if (window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
+              applyCameraTransform(transform);
+          } else {
+              const currentTransform = d3.zoomTransform(svg.node());
+              const panX = d3.interpolateNumber(currentTransform.x, transform.x);
+              const panY = d3.interpolateNumber(currentTransform.y, transform.y);
+              svg.transition("focus-pan").duration(250).tween("focus-pan", () => time => {
+                  applyCameraTransform(d3.zoomIdentity
+                                       .translate(panX(time), panY(time)).scale(currentTransform.k));
+              });
+          }
+      }
+
       function selectNode(node) {
           selectedNodeId = node.id;
           updateNodeFocus();
+          panFocusedNode(node);
       }
 
       // Kept separate so keyboard and clear-control work can reuse base-style recovery.
@@ -810,8 +857,12 @@
           // Revert to placeholder on mouseout
           d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover over a node to view note details</div>');
       });
-      // Add drag behavior
+      // Keep D3's movement threshold while consuming only drag's generated click.
+      const dragClickDistance = 3;
+      let dragStartPoint = null;
+      let nodeDragMoved = false;
       node.call(d3.drag()
+      .clickDistance(dragClickDistance)
       .on("start", dragstarted)
       .on("drag", dragged)
       .on("end", dragended));
@@ -954,12 +1005,22 @@
       // Drag event handlers
       function dragstarted(event) {
       cancelSequenceFrame();
+      const sourceEvent = event.sourceEvent;
+      dragStartPoint = sourceEvent && Number.isFinite(sourceEvent.clientX) && Number.isFinite(sourceEvent.clientY)
+          ? {x: sourceEvent.clientX, y: sourceEvent.clientY} : null;
+      nodeDragMoved = false;
       if (!event.active) simulation.alphaTarget(0.3).restart();
       event.subject.fx = event.subject.x;
       event.subject.fy = event.subject.y;
       }
 
       function dragged(event) {
+      const sourceEvent = event.sourceEvent;
+      if (dragStartPoint && sourceEvent && Number.isFinite(sourceEvent.clientX)
+          && Number.isFinite(sourceEvent.clientY)) {
+          nodeDragMoved = Math.hypot(sourceEvent.clientX - dragStartPoint.x,
+                                    sourceEvent.clientY - dragStartPoint.y) > dragClickDistance;
+      }
       event.subject.fx = event.x;
       event.subject.fy = event.y;
       }
@@ -968,6 +1029,18 @@
       if (!event.active) simulation.alphaTarget(0);
       event.subject.fx = null;
       event.subject.fy = null;
+      if (nodeDragMoved) {
+          const view = event.sourceEvent && event.sourceEvent.view;
+          d3.select(view).on("click.drag", null);
+          document.addEventListener("click", draggedClick, {capture: true, once: true});
+      }
+      dragStartPoint = null;
+      nodeDragMoved = false;
+      }
+
+      function draggedClick(event) {
+      event.preventDefault();
+      event.stopImmediatePropagation();
       }
 
 
