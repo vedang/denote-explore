@@ -229,6 +229,25 @@
           stroke-dasharray: none;
       }
 
+      /* Keyboard focus is intentionally distinct from Sequence membership and selection. */
+      .graph-node:focus {
+          outline: 3px solid #f59e0b;
+          outline-offset: 3px;
+          stroke: #f59e0b;
+          stroke-width: 5px;
+      }
+
+      .selection-status {
+          margin-top: 12px;
+          color: #444;
+          font-size: 16px;
+      }
+
+      #clear-focus-button {
+          margin-top: 8px;
+          align-self: flex-start;
+      }
+
       .sequence-relation-hierarchy {
           stroke-width: 2.5px;
           stroke-dasharray: none;
@@ -297,8 +316,10 @@
         <input type="range" id="density-slider" style="width: 150px; cursor: pointer;">
       </div>
       <div id="sidebar-content" class="sidebar-content">
-        <div class="sidebar-placeholder">Hover over a node to view note details</div>
+        <div class="sidebar-placeholder">Hover to preview details. Select a node to keep focus.</div>
       </div>
+      <div id="selected-node-status" class="selection-status" aria-live="polite" aria-atomic="true">No node selected.</div>
+      <button id="clear-focus-button" type="button" disabled>Clear focus</button>
     </div>
     <!-- Sidebar Resizer -->
     <div id="resizer" class="resizer"></div>
@@ -708,7 +729,7 @@
           d3.select("#sidebar-content").html(edgeContent);
       })
       .on("mouseout", () => {
-          d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover over a node to view note details</div>');
+          d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover to preview details. Select a node to keep focus.</div>');
       });
 
       // Persistent Sequence rings sit behind nodes and remain independent of later selection.
@@ -721,6 +742,29 @@
       .attr("r", d => nodeRadius(d) + 7);
 
       let selectedNodeId = null;
+      const selectedNodeStatus = d3.select("#selected-node-status");
+      const clearFocusButton = document.getElementById("clear-focus-button");
+
+      function nodeDisplayName(node) {
+          return typeof node.name === "string" && node.name.length > 0 ? node.name : String(node.id);
+      }
+
+      function nodeAccessibleName(node) {
+          return `Select ${nodeDisplayName(node)}`;
+      }
+
+      function updateSelectedNodeStatus() {
+          const selectedNode = nodes.find(node => node.id === selectedNodeId);
+          if (!selectedNode) {
+              selectedNodeStatus.text("No node selected.");
+              clearFocusButton.disabled = true;
+              return;
+          }
+          const connectionCount = (incidentRelationsByNodeId.get(selectedNode.id) || []).length;
+          const connectionLabel = connectionCount === 1 ? "connection" : "connections";
+          selectedNodeStatus.text(`Selected ${nodeDisplayName(selectedNode)}: ${connectionCount} ${connectionLabel}.`);
+          clearFocusButton.disabled = false;
+      }
 
       function selectedNeighborhood(nodeId) {
           const neighborIds = new Set([nodeId]);
@@ -735,7 +779,9 @@
 
       function updateNodeFocus() {
           if (selectedNodeId === null) {
-              node.classed("selected-node", false).style("opacity", null);
+              node.classed("selected-node", false)
+                  .attr("aria-pressed", "false")
+                  .style("opacity", null);
               link.style("stroke-opacity", null);
               updateRelationStrokes(baseRelationStroke);
               return;
@@ -743,6 +789,7 @@
 
           const {neighborIds, relationKeys} = selectedNeighborhood(selectedNodeId);
           node.classed("selected-node", d => d.id === selectedNodeId)
+              .attr("aria-pressed", d => d.id === selectedNodeId ? "true" : "false")
               .style("opacity", d => neighborIds.has(d.id) ? 1 : 0.2);
           link.style("stroke-opacity", relation => relationKeys.has(relation.key) ? 1 : 0.12);
           updateRelationStrokes(relation => relationKeys.has(relation.key)
@@ -792,6 +839,7 @@
       function applyGraphStyles() {
           updateNodeFocus();
           updateLabels();
+          updateSelectedNodeStatus();
       }
 
       function selectNode(node) {
@@ -815,8 +863,18 @@
       .attr("class", nodeClass)
       .attr("r", nodeRadius)
       .attr("fill", d => color(d.type))
+      .attr("role", "button")
+      .attr("tabindex", 0)
+      .attr("aria-label", nodeAccessibleName)
+      .attr("aria-pressed", "false")
       .on("click", (event, d) => {
           selectNode(d);
+      })
+      .on("keydown", (event, d) => {
+          if (event.key === "Enter" || event.key === " ") {
+              event.preventDefault();
+              selectNode(d);
+          }
       })
       .on("mouseover", (event, d) => {
           // Check if the filename is an image, PDF, or a text document
@@ -870,7 +928,7 @@
       })
       .on("mouseout", () => {
           // Revert to placeholder on mouseout
-          d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover over a node to view note details</div>');
+          d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover to preview details. Select a node to keep focus.</div>');
       });
       // Keep D3's movement threshold while consuming only drag's generated click.
       const dragClickDistance = 3;
@@ -910,7 +968,7 @@
       // Shared visibility hook for isolated filtering and later keyboard support.
       function applyNodeVisibility() {
           node.style("display", d => nodeIsVisible(d) ? null : "none")
-              .attr("tabindex", d => nodeIsVisible(d) ? null : -1);
+              .attr("tabindex", d => nodeIsVisible(d) ? 0 : -1);
           sequenceHalo.style("display", d => nodeIsVisible(d) ? null : "none");
           const selectedNode = nodes.find(d => d.id === selectedNodeId);
           if (selectedNode && !nodeIsVisible(selectedNode)) {
@@ -919,6 +977,11 @@
               applyGraphStyles();
           }
       }
+
+      clearFocusButton.addEventListener("click", clearNodeFocus);
+      svg.on("keydown.clear-focus", event => {
+          if (event.key === "Escape") clearNodeFocus();
+      });
 
       function relationDistance(relation) {
           if (!isSequenceType) return 20;
