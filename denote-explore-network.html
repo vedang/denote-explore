@@ -867,6 +867,8 @@
 
       // Kept separate so keyboard and clear-control work can reuse base-style recovery.
       function clearNodeFocus() {
+          svg.interrupt("focus-pan");
+          applyingCameraMotion = false;
           selectedNodeId = null;
           applyGraphStyles();
       }
@@ -1134,8 +1136,6 @@
       .attr("x", d => d.x)
       .attr("y", d => d.y);
 
-      // Threshold trigger is guarded by sequenceFrameState; later ticks never refit.
-      if (simulation.alpha() <= 0.1) frameSequenceOnce();
       }
 
       // Drag event handlers

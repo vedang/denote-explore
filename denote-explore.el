@@ -1251,12 +1251,8 @@ When TEXT-ONLY, exclude attachments from the graph."
   "Return eligible Denote files after sequence graph exclusions.
 
 TEXT-ONLY excludes attachments.  Every returned file has a Denote identifier."
-  (let ((files (denote-directory-files nil nil text-only nil t)))
-    (if denote-explore-network-regex-ignore
-        (seq-remove (lambda (file)
-                      (string-match-p denote-explore-network-regex-ignore file))
-                    files)
-      files)))
+  (denote-explore--network-filter-files
+   (denote-directory-files nil nil text-only nil t)))
 
 (defun denote-explore--network-sequence-id-index (files)
   "Return an exact identifier-to-file hash table for FILES.
