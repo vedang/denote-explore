@@ -1223,55 +1223,79 @@ Optionally analyse TEXT-ONLY files."
 Optionally analyse TEXT-ONLY files."
   (unless (featurep 'denote-sequence)
     (user-error "Network Sequence Graphs require denote-sequence to be loaded"))
-  (let* ((all-files (denote-directory-files (concat "==" root) nil text-only))
-	 (files (denote-explore--network-filter-files all-files))
-	 (sequences (denote-explore--network-sequence-edges files))
-	 (edges (denote-explore--network-edges-from-sequences sequences files))
-	 (edges-alist (denote-explore--network-count-edges edges))
-	 (nodes (mapcar #'denote-explore--network-extract-node files))
-	 (nodes-degrees (denote-explore--network-degree nodes edges-alist))
-	 (nodes-alist (denote-explore--network-backlinks nodes-degrees edges-alist))
-	 (meta-alist `((directed . t)
-		       (type . ,(car denote-explore-network-previous))
-		       (parameters ,(cadr denote-explore-network-previous)))))
-    `((meta . ,meta-alist) (nodes . ,nodes-alist) (edges . ,edges-alist))))
+  (let* ((all-files (denote-explore--network-filter-files
+                     (denote-directory-files nil nil text-only nil t)))
+         (files (seq-filter
+                 (lambda (file)
+                   (when-let ((signature (denote-retrieve-filename-signature file)))
+                     (denote-explore--network-sequence-member-p root signature)))
+                 all-files)))
+    (unless files
+      (user-error "No sequence notes found for root: %s" root))
+    (let* ((sequences (denote-explore--network-sequence-edges files))
+           (edges (denote-explore--network-edges-from-sequences sequences files))
+           (edges-alist (denote-explore--network-count-edges edges))
+           (nodes (mapcar #'denote-explore--network-extract-node files))
+           (nodes-degrees (denote-explore--network-degree nodes edges-alist))
+           (nodes-alist (denote-explore--network-backlinks nodes-degrees edges-alist))
+           (meta-alist `((directed . t)
+                         (type . ,(car denote-explore-network-previous))
+                         (parameters ,(cadr denote-explore-network-previous)))))
+      `((meta . ,meta-alist) (nodes . ,nodes-alist) (edges . ,edges-alist)))))
+
+(defun denote-explore--network-sequence-member-p (root signature)
+  "Return non-nil when SIGNATURE is ROOT or its structural descendant."
+  (or (string-empty-p root)
+      (string= root signature)
+      (let ((root-parts (denote-explore--network-sequence-parts root))
+            (signature-parts (denote-explore--network-sequence-parts signature)))
+        (and root-parts signature-parts
+             (<= (length root-parts) (length signature-parts))
+             (equal root-parts (seq-take signature-parts (length root-parts)))))))
+
+(defun denote-explore--network-sequence-parts (sequence)
+  "Return SEQUENCE components using denote-sequence, or nil when invalid."
+  (condition-case nil
+      (denote-sequence-split sequence)
+    (error nil)))
+
+(defun denote-explore--network-sequence-parent (sequence)
+  "Return SEQUENCE's immediate parent using its detected scheme, or nil."
+  (condition-case nil
+      (let ((parts (denote-sequence-split sequence))
+            (scheme (cdr (denote-sequence-and-scheme-p sequence))))
+        (when (> (length parts) 1)
+          (denote-sequence-join (butlast parts) scheme)))
+    (error nil)))
 
 (defun denote-explore--network-sequence-edges (files)
-  "Create an edgle list of signatures from FILES."
-  (if-let* ((sequences (mapcar #'denote-retrieve-filename-signature files))
-	   ((> (length files) 1)))
-      ;; Extract edges from signatures
-      (let ((result '()))
-	(dolist (sequence sequences)
-	  (let* ((parts (denote-sequence-split sequence))
-		 (target sequence)
-		 (source (when (> (length parts) 1)
-			   (denote-sequence-join (butlast parts) denote-sequence-scheme))))
-            (when source
-	      (push `((source . ,source) (target . ,target)) result))))
-	result)
-    (user-error "Root node has no children")))
+  "Create immediate parent signature edges from FILES."
+  (let (result)
+    (dolist (target (mapcar #'denote-retrieve-filename-signature files))
+      (when-let ((source (denote-explore--network-sequence-parent target)))
+        (push `((source . ,source) (target . ,target)) result)))
+    (nreverse result)))
 
 (defun denote-explore--network-edges-from-sequences (sequences files)
-  "Replace signatures in SEQUENCES edge list with identifiers from FILES."
-  (let* ((signature-map (denote-explore--network-signature-identifier-map files))
-	 (edges (mapcar (lambda (seq)
-			  (let ((source-id (cdr (assoc (cdr (assoc 'source seq)) signature-map)))
-				(target-id (cdr (assoc (cdr (assoc 'target seq)) signature-map))))
-			    `((source . ,source-id) (target . ,target-id))))
-			sequences)))
-    (seq-filter (lambda (seq)
-                  (let ((source (cdr (assoc 'source seq))))
-                    (and source (not (string= source "")))))
-		edges)))
+  "Replace signatures in SEQUENCES with identifiers from selected FILES."
+  (let ((signature-map (denote-explore--network-signature-identifier-map files))
+        edges)
+    (dolist (sequence sequences)
+      (let ((source-id (cdr (assoc (cdr (assoc 'source sequence)) signature-map)))
+            (target-id (cdr (assoc (cdr (assoc 'target sequence)) signature-map))))
+        (when (and source-id target-id)
+          (push `((source . ,source-id) (target . ,target-id)) edges))))
+    (nreverse edges)))
 
 (defun denote-explore--network-signature-identifier-map (files)
-  "Map signatures to identifiers from a list of FILES."
+  "Map signatures to identifiers from FILES, rejecting duplicate signatures."
   (let (result)
     (dolist (file files result)
       (let ((signature (denote-retrieve-filename-signature file))
             (identifier (denote-retrieve-filename-identifier file)))
         (when (and signature identifier)
+          (when (assoc signature result)
+            (user-error "Duplicate sequence signature: %s" signature))
           (push (cons signature identifier) result))))))
 
 ;;; SAVE GRAPH
