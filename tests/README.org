@@ -60,7 +60,7 @@ iframe requests. Every test captures JS errors and a 1280x800 screenshot.
 Run =sh tests/run-browser.sh 'PREFIX:'= (alternatives separated by =|=):
 - =normalize:= task15; =paths:= task16; =hero:= task17; =framing:= task18.
 - =focus:= task19 (6 named cases).
-- =camera:= (3) and =drag:= (1) task20.
+- =camera:= (4, including clear-pan regression) and =drag:= (1) task20.
 - =labels:= and =isolation:= task21 (2).
 - =keyboard:= (4), =status:= (1), =reduced-motion:= (1) task22.
 - =statistics:= task23.
@@ -92,7 +92,9 @@ JSON and HTML exporters with browser launch stubbed, and serves that exact HTML.
 It parses substituted JS and checks focus/data/statistics, not copied UI logic.
 The standalone performance probe uses 1200 real notes (depth2 star/ring) plus the
 fixed dense-hub fixture. It records counts, one extractor scan, generation/load/
-settling/focus timings, finite geometry, sizing bounds and screenshots. Override
+settling/focus timings, finite geometry, sizing bounds and screenshots. Settling
+waits for the real simulation end event and verifies all sequence members remain
+inside the viewport; it does not stop a still-cooling layout. Override
 =PERFORMANCE_NOTE_COUNT= only within 5..5000. Timings exclude fixture creation
 and are machine-local observations, not universal latency claims. Direct harness
 imports default to the pinned local browser cache too.
