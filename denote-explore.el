@@ -1206,6 +1206,83 @@ When TEXT-ONLY, exclude attachments from the graph."
     (user-error "No network neighbourhood found")))
 
 ;; Sequence Graphs
+(defun denote-explore--network-sequence-eligible-files (text-only)
+  "Return eligible Denote files after sequence graph exclusions.
+
+TEXT-ONLY excludes attachments.  Every returned file has a Denote identifier."
+  (let ((files (denote-directory-files nil nil text-only nil t)))
+    (if denote-explore-network-regex-ignore
+        (seq-remove (lambda (file)
+                      (string-match-p denote-explore-network-regex-ignore file))
+                    files)
+      files)))
+
+(defun denote-explore--network-sequence-id-index (files)
+  "Return an exact identifier-to-file hash table for FILES.
+
+Signal `user-error' when FILES contains duplicate identifiers."
+  (let ((index (make-hash-table :test #'equal)))
+    (dolist (file files index)
+      (let ((identifier (denote-retrieve-filename-identifier file)))
+        (when (gethash identifier index)
+          (user-error "Duplicate Denote identifier: %s" identifier))
+        (puthash identifier file index)))))
+
+(defun denote-explore--network-sequence-context (root text-only depth)
+  "Return sequence context for ROOT up to link traversal DEPTH.
+
+The returned alist contains selected sequence files, included files, minimum
+link distances, and occurrence-preserving links within eligible files.
+TEXT-ONLY excludes attachments."
+  (let* ((universe (denote-explore--network-sequence-eligible-files text-only))
+         (id-index (denote-explore--network-sequence-id-index universe))
+         (sequence-files
+          (seq-filter
+           (lambda (file)
+             (when-let ((signature (denote-retrieve-filename-signature file)))
+               (denote-explore--network-sequence-member-p root signature)))
+           universe))
+         (distances (make-hash-table :test #'equal)))
+    (unless sequence-files
+      (user-error "No sequence notes found for root: %s" root))
+    (dolist (file sequence-files)
+      (puthash (denote-retrieve-filename-identifier file) 0 distances))
+    (let ((edges nil))
+      (when (> depth 0)
+        (setq edges
+              (seq-filter
+               (lambda (edge)
+                 (and (gethash (alist-get 'source edge) id-index)
+                      (gethash (alist-get 'target edge) id-index)))
+               (denote-explore--network-extract-edges universe)))
+        (let ((outgoing (make-hash-table :test #'equal))
+              (incoming (make-hash-table :test #'equal))
+              (frontier (mapcar #'denote-retrieve-filename-identifier
+                                sequence-files))
+              (level 0))
+          (dolist (edge edges)
+            (let ((source (alist-get 'source edge))
+                  (target (alist-get 'target edge)))
+              (push target (gethash source outgoing))
+              (push source (gethash target incoming))))
+          (while (and frontier (< level depth))
+            (let (next)
+              (dolist (identifier frontier)
+                (dolist (neighbour (append (gethash identifier outgoing)
+                                           (gethash identifier incoming)))
+                  (unless (gethash neighbour distances)
+                    (puthash neighbour (1+ level) distances)
+                    (push neighbour next))))
+              (setq frontier (nreverse next))
+              (setq level (1+ level))))))
+      `((files . ,(seq-filter
+                   (lambda (file)
+                     (gethash (denote-retrieve-filename-identifier file) distances))
+                   universe))
+        (sequence-files . ,sequence-files)
+        (distances . ,distances)
+        (edges . ,edges)))))
+
 (defun denote-explore-network-sequence (text-only)
   "Generate a graph of signature sequences from a selected root node.
 Optionally analyse TEXT-ONLY files."
