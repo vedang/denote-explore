@@ -55,3 +55,17 @@ Popup calls and top-level navigation are trapped separately from canned hover
 iframe requests. Every test captures JS errors and a 1280x800 screenshot.
 =[ref:sequence_hero_identity]= fixture/radius/framing rubric lives in
 =sequence-context-contract.org=.
+
+* Browser selector ownership
+Run =sh tests/run-browser.sh 'PREFIX:'= (alternatives separated by =|=):
+- =normalize:= task15; =paths:= task16; =hero:= task17; =framing:= task18.
+- =focus:= task19 (6 named cases).
+- =camera:= (3) and =drag:= (1) task20.
+- =labels:= and =isolation:= task21 (2).
+- =keyboard:= (4), =status:= (1), =reduced-motion:= (1) task22.
+- =statistics:= task23.
+Node may print a passing file wrapper for files with no matching tests; these
+are not additional assertion cases. Full integration runs every group.
+Tests use existing node/link selections; =.sequence-halo= names persistent
+sequence rings. Keyboard/status cases require standard roles and aria-live,
+not a separate production test API.
