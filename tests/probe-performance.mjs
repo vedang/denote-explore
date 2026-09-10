@@ -21,14 +21,19 @@ for(const {name,packet} of cases){
     // [ref:sequence_final_framing] Observe actual end; never freeze mid-layout.
     await view.page.waitForFunction(()=>__simulationState.ended,null,{timeout:60000});
     const settledMs=performance.now()-start;
-    await view.page.locator('#density-slider').evaluate(el=>{el.value=el.min;el.dispatchEvent(new Event('input',{bubbles:true}));});
+    // [ref:network_labels_off] Hero evidence needs minimum nonzero density, not off.
+    await view.page.locator('#density-slider').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));});
     const shape=await view.page.evaluate(()=>({
       nodes:__graph.nodes.length,edges:__graph.links.length,
       radii:__graph.node.nodes().map(el=>({hero:el.__data__.sequenceMember,r:+el.getAttribute('r')})),
       finite:__graph.coordinates().every(n=>Number.isFinite(n.x)&&Number.isFinite(n.y)),
-      visibleHeroes:document.querySelectorAll('.sequence-halo').length
+      visibleHeroes:document.querySelectorAll('.sequence-halo').length,
+      heroIds:__graph.nodes.filter(n=>n.sequenceMember).map(n=>n.id).sort(),
+      heroLabelIds:[...document.querySelectorAll('.labels-group text')]
+        .filter(el=>el.__data__.sequenceMember).map(el=>el.__data__.id).sort()
     }));
     assert.equal(shape.finite,true);assert.equal(shape.visibleHeroes,3);
+    assert.deepEqual(shape.heroLabelIds,shape.heroIds,'hero evidence requires every Sequence label');
     assert.ok(Math.max(...shape.radii.filter(n=>!n.hero).map(n=>n.r))<=Math.min(...shape.radii.filter(n=>n.hero).map(n=>n.r)));
     if(name==='large-real-sequence'){
       assert.equal(shape.nodes,count);assert.equal(shape.edges,2*count-4);assert.equal(packet.extractorCalls,1);

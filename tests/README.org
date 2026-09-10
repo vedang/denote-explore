@@ -61,7 +61,9 @@ Run =sh tests/run-browser.sh 'PREFIX:'= (alternatives separated by =|=):
 - =normalize:= task15; =paths:= task16; =hero:= task17; =framing:= task18.
 - =focus:= task19 (6 named cases).
 - =camera:= (4, including clear-pan regression) and =drag:= (1) task20.
-- =labels:= and =isolation:= task21 (2).
+- =labels:= (6: nonzero priorities, zero density across four graph types,
+  equal-degree range); =isolation:= (1), extending task21.
+- =sidebar:= (4: selected details and node/edge preview fallback across graph types).
 - =keyboard:= (6, including animated Enter/Space), =status:= (1),
   =reduced-motion:= (1) task22.
 - =statistics:= task23.
