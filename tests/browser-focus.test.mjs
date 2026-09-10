@@ -132,17 +132,65 @@ test('drag: releasing a dragged node does not activate it',async t=>{
   await noNavigation(view);
 });
 
-test('labels: density keeps selected and hero labels without reheating',async t=>{
+test('labels: nonzero density keeps selected and hero labels without reheating',async t=>{
   const {page}=await openGraph(t,await fixture());
   await activate(page,'X');
   assert.equal(await page.evaluate(()=>__graph.selected()),'X');
   const before=await page.evaluate(()=>({coords:__graph.coordinates(),alpha:__graph.simulation.alpha(),restarts:__simulationState.restarts}));
-  await page.locator('#density-slider').evaluate(el=>{el.value=el.min;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.locator('#density-slider').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));});
   const after=await page.evaluate(()=>({coords:__graph.coordinates(),alpha:__graph.simulation.alpha(),restarts:__simulationState.restarts}));
   assert.deepEqual(after,before);
   const labels=await page.locator('.labels-group text').evaluateAll(els=>els.map(e=>e.__data__.id));
   for(const id of ['A','B','C','X']) assert.ok(labels.includes(id));
   assert.equal(await page.evaluate(()=>__graph.selected()),'X');
+});
+
+for(const type of ['Sequence','Community','Neighbourhood','Keywords']) {
+  test(`labels: ${type} zero density hides all labels through selection`,async t=>{
+    const {page}=await openGraph(t,await graphOfType(type));
+    await page.locator('#density-slider').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    assert.equal(await page.locator('.labels-group text').count(),0);
+    await activate(page,'X');
+    assert.equal(await page.locator('.labels-group text').count(),0);
+    await page.locator('#density-slider').evaluate(el=>{el.value=el.max;el.dispatchEvent(new Event('input',{bubbles:true}));});
+    assert.equal(await page.locator('.labels-group text').count(),await page.locator('.graph-node').count());
+  });
+
+  test(`sidebar: ${type} selection persists under node and edge previews`,async t=>{
+    const {page}=await openGraph(t,await graphOfType(type));
+    const title=()=>page.locator('#sidebar-content .title').innerText();
+    const name=id=>page.evaluate(id=>__graph.nodes.find(n=>n.id===id).name,id);
+    await activate(page,'A');
+    assert.equal(await title(),await name('A'));
+    await page.evaluate(()=>__graph.element('X').dispatchEvent(new MouseEvent('mouseover',{bubbles:true})));
+    assert.equal(await title(),await name('X'));
+    await page.evaluate(()=>__graph.element('X').dispatchEvent(new MouseEvent('mouseout',{bubbles:true})));
+    assert.equal(await title(),await name('A'));
+    await page.evaluate(()=>__graph.link.node().dispatchEvent(new MouseEvent('mouseover',{bubbles:true})));
+    assert.equal(await title(),'Connection Details');
+    await page.evaluate(()=>__graph.link.node().dispatchEvent(new MouseEvent('mouseout',{bubbles:true})));
+    assert.equal(await title(),await name('A'));
+    await page.evaluate(()=>__graph.element('X').focus());
+    await page.keyboard.press('Enter');
+    assert.equal(await title(),await name('X'));
+    await page.keyboard.press('Escape');
+    assert.equal(await page.locator('#sidebar-content .sidebar-placeholder').count(),1);
+    await page.evaluate(()=>__graph.element('A').dispatchEvent(new MouseEvent('mouseover',{bubbles:true})));
+    assert.equal(await title(),await name('A'));
+    await page.evaluate(()=>__graph.element('A').dispatchEvent(new MouseEvent('mouseout',{bubbles:true})));
+    assert.equal(await page.locator('#sidebar-content .sidebar-placeholder').count(),1);
+  });
+}
+
+test('labels: equal degrees still offer distinct off and all settings',async t=>{
+  const graph=await graphOfType('Community');
+  graph.nodes.forEach(n=>{n.degree=0;});
+  const {page}=await openGraph(t,graph);
+  assert.equal(await page.locator('.labels-group text').count(),graph.nodes.length);
+  await page.locator('#density-slider').evaluate(el=>{el.value='0';el.dispatchEvent(new Event('input',{bubbles:true}));});
+  assert.equal(await page.locator('.labels-group text').count(),0);
+  await page.locator('#density-slider').evaluate(el=>{el.value=el.max;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  assert.equal(await page.locator('.labels-group text').count(),graph.nodes.length);
 });
 
 test('isolation: hide clears selection labels tab stops but not legend circles',async t=>{
@@ -216,6 +264,8 @@ test('status: malicious-looking selected names remain inert text',async t=>{
   assert.equal(await page.locator('[aria-live]').count(),1);
   assert.ok((await page.locator('[aria-live]').innerText()).includes(name));
   assert.equal(await page.locator('[aria-live] img').count(),0);
+  assert.equal(await page.locator('#sidebar-content .title').innerText(),name);
+  assert.equal(await page.locator('#sidebar-content .title img').count(),0);
   assert.equal(await page.evaluate(()=>window.__injected??null),null);
 });
 

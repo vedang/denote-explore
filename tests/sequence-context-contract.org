@@ -107,7 +107,7 @@ Absent/null collections normalize to []; legacy missing kind means hierarchy for
 Sequence and ordinary link otherwise. Legacy relation keys must remain unique,
 even if endpoints repeat. D3-mutated endpoint objects normalize to node IDs.
 
-Keep file-type fill. Sequence nodes have persistent halo and labels; context
+Keep file-type fill. Sequence nodes have persistent halo and nonzero-density labels; context
 secondary; selected node gets separate stronger outline. Hierarchy vs actual
 links differ by stroke pattern/weight, not color alone. Typed overlaps and reverse
 links use deterministic distinct paths; self-links visible loops. Directed arrow
@@ -129,10 +129,14 @@ Any user wheel/pointerdown/keyboard activation before framing cancels auto-fit.
 Never refit on ticks or override manual selection. Nonsequence legacy framing
 stays baseline. Reduced motion disables animated pan/framing.
 
-Labels shown when density predicate OR sequenceMember OR selected, provided node
-visible. Label-only change must not restart/reheat simulation. Community isolated
+[tag:network_labels_off]
+Zero density hides every label, including sequenceMember and selected nodes.
+At nonzero density, labels show when density predicate OR sequenceMember OR
+selected, provided node visible. Label-only change must not restart/reheat simulation. Community isolated
 filter targets graph nodes, not all circles; hidden selected node clears selection
-and status, labels/halos/tab stops. Hover previews remain independent of selection.
+and status, labels/halos/tab stops. Selection renders persistent sidebar details;
+node/edge hover temporarily previews details, and mouseout restores selection
+or placeholder. Clear focus removes persistent details.
 Nodes expose accessible names, button role/tabindex, visible keyboard focus and
 pressed state; Enter/Space selects, Space prevents scrolling. Escape/clear button
 restores base style. Persistent aria-live selection status survives hover mouseout.
@@ -150,7 +154,8 @@ Viewport 1280x800 CSS pixels, deviceScaleFactor=1, screenshot 1280x800 pixels;
 fixed-layout framing must center S, not X (center tolerance 2 SVG units).
 Test focus centers selected node within 2 rendered CSS pixels across zoom scales
 0.5/1/2 and sidebar widths 250/400. Capture hero screenshot before/after external
-selection and at minimum label density; persistent sequence halo/labels required.
+selection and at minimum nonzero label density; persistent sequence halo/labels
+required. At zero density halos persist but every label is absent.
 Large-graph integration also runs live layout, recording graph counts, timing,
 platform and actual screenshot evidence, not universal performance promises.
 

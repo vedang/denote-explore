@@ -703,14 +703,20 @@ selection.
 
    For community and neighbourhood graphs, node size increases with
 degree.  The colours indicate the file type of each node; keyword nodes
-have equal sizes.  Sequence members retain a halo and label
-independently of selection, while context nodes are no larger than the
-smallest sequence member.  Hierarchy relationships use solid strokes and
-actual links use dashed strokes.
+have equal sizes.  Sequence members retain a halo independently of
+selection, while context nodes are no larger than the smallest sequence
+member.  Hierarchy relationships use solid strokes and actual links use
+dashed strokes.
 
-   The label-density slider controls ordinary labels without restarting
-the layout.  Visible sequence members and the selected node keep their
-labels at every density setting.
+   The label-density slider controls labels without restarting the
+layout.  At zero (the leftmost setting), every label is hidden,
+including sequence members and the selected node.  At nonzero settings,
+visible sequence members and the selected node keep their labels.
+
+   Selecting a node shows its details in the sidebar.  Hovering over
+another node or an edge temporarily previews its details; leaving it
+restores the selected node's details.  Clearing focus removes the
+persistent details.
 
    In keyword graphs, the thickness of the edges indicates the number of
 times two keywords are associated with each other.
@@ -999,12 +1005,12 @@ Node: Sequences Network21956
 Node: Keyword Network25651
 Node: Network Layout and Presentation28323
 Node: D3js30252
-Node: GraphViz34789
-Node: Graph Exchange XML Format36722
-Node: Analysing the Denote Network37761
-Node: Installation and Package Configuration40518
-Node: Acknowledgements43497
-Node: License44217
+Node: GraphViz35097
+Node: Graph Exchange XML Format37030
+Node: Analysing the Denote Network38069
+Node: Installation and Package Configuration40826
+Node: Acknowledgements43805
+Node: License44525
 
 End Tag Table
 

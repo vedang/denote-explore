@@ -91,7 +91,7 @@ test('hero: bounded context sizes persistent halos labels and file colors', asyn
   const graph=await fixture('sequence-hub');
   const {page,errors}=await openGraph(t,graph);
   assert.deepEqual(errors,[]);
-  await page.locator('#density-slider').evaluate(el=>{el.value=el.min;el.dispatchEvent(new Event('input',{bubbles:true}));});
+  await page.locator('#density-slider').evaluate(el=>{el.value='1';el.dispatchEvent(new Event('input',{bubbles:true}));});
   const state=await page.evaluate(()=>({
     nodes:__graph.node.nodes().map(el=>({id:el.__data__.id,member:el.__data__.sequenceMember,
       r:+el.getAttribute('r'),fill:getComputedStyle(el).fill})),

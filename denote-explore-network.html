@@ -462,17 +462,19 @@
           return link;
       }
 
-      // Get unique sorted degree values to map label density ranks accurately without dead zones
+      // Zero is a distinct "off" state; positive values retain degree-rank behavior.
       const uniqueDegrees = Array.from(new Set(nodes.map(d => d.degree))).sort((a, b) => a - b);
-      // Variable to hold the current minimum degree tag value
+      let labelsVisible = nodes.length > 0;
       let minDegreeTag = 2;
       if (!uniqueDegrees.includes(minDegreeTag)) {
           minDegreeTag = uniqueDegrees[Math.floor(uniqueDegrees.length / 2)] || 0;
       }
       const initialSliderIndex = uniqueDegrees.indexOf(minDegreeTag);
-      const initialSliderValue = initialSliderIndex !== -1 ? (uniqueDegrees.length - 1) - initialSliderIndex : 0;
+      // Reserve slider zero for no labels.  Degree ranks occupy 1..uniqueDegrees.length.
+      const initialSliderValue = uniqueDegrees.length > 0 && initialSliderIndex !== -1
+          ? uniqueDegrees.length - initialSliderIndex : 0;
 
-      // Hover details are rendered statically inside the #sidebar container
+      // Hover and selected details share the #sidebar container.
 
       // Frame only Sequence graphs with known members; all other graph views keep baseline camera behavior.
       let sequenceFrameState = isSequenceType && nodes.some(node => node.sequenceMember)
@@ -541,8 +543,9 @@
           return !hiddenNodeIds.has(node.id);
       }
 
+      // [ref:network_labels_off] Explicit off overrides Sequence and selection priorities.
       function labelEligible(node) {
-          return nodeIsVisible(node)
+          return labelsVisible && nodeIsVisible(node)
               && (node.degree >= minDegreeTag || node.sequenceMember || node.id === selectedNodeId);
       }
 
@@ -737,18 +740,184 @@
       }
       updateRelationStrokes(baseRelationStroke);
 
-      // Add hover interaction for edges to show connection details in the sidebar
+      let selectedNodeId = null;
+      let sidebarPreview = null;
+      const sidebarContentElement = document.getElementById("sidebar-content");
+
+      function appendSidebarText(parent, className, text) {
+          const element = document.createElement("div");
+          element.className = className;
+          element.textContent = text;
+          parent.appendChild(element);
+          return element;
+      }
+
+      function renderSidebarPlaceholder() {
+          sidebarContentElement.replaceChildren();
+          appendSidebarText(sidebarContentElement, "sidebar-placeholder",
+                            "Hover to preview details. Select a node to keep focus.");
+      }
+
+      function nodeFilename(node) {
+          return node && typeof node.filename === "string" ? node.filename : "";
+      }
+
+      function appendNodeId(parent, node) {
+          const line = document.createElement("div");
+          const id = node && node.id != null ? String(node.id) : "";
+          const markerIndex = id.indexOf("T");
+          line.className = "metadata";
+          line.append("ID: ");
+          if (markerIndex === -1) {
+              line.append(id);
+          } else {
+              line.append(id.slice(0, markerIndex));
+              const marker = document.createElement("span");
+              marker.className = "lighter";
+              marker.textContent = "T";
+              line.appendChild(marker);
+              line.append(id.slice(markerIndex + 1));
+          }
+          parent.appendChild(line);
+      }
+
+      function appendNodePreview(parent, node) {
+          const filename = nodeFilename(node);
+          const isImage = /\.(jpg|jpeg|png|gif|svg)$/i.test(filename);
+          const isPDF = /\.pdf$/i.test(filename);
+          const isTextDoc = /\.(txt|md|org)$/i.test(filename);
+          if (isImage) {
+              const image = document.createElement("img");
+              image.src = filename;
+              image.alt = nodeDisplayName(node);
+              image.style.cssText = "max-width: 100%; height: auto; margin-top: 15px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);";
+              image.addEventListener("load", () => {
+                  if (image.naturalHeight > image.naturalWidth) image.style.maxHeight = "500px";
+              });
+              parent.appendChild(image);
+          } else if (isPDF) {
+              const preview = document.createElement("iframe");
+              preview.src = `${filename}?toolbar=0&navpanes=0&scrollbar=0#view=FitH`;
+              preview.style.cssText = "width: 100%; height: 500px; margin-top: 15px; border: 1px solid #ddd; border-radius: 4px;";
+              parent.appendChild(preview);
+          } else if (isTextDoc) {
+              const heading = appendSidebarText(parent, "metadata", "File Preview:");
+              heading.style.cssText = "margin-top: 15px; font-weight: bold;";
+              const preview = document.createElement("iframe");
+              preview.src = filename;
+              preview.style.cssText = "width: 100%; height: 450px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; background-color: #fcfcfc;";
+              preview.addEventListener("load", () => {
+                  try {
+                      const doc = preview.contentDocument || preview.contentWindow.document;
+                      const pre = doc.querySelector("pre") || doc.body;
+                      pre.style.fontSize = "22px";
+                      pre.style.lineHeight = "1.6";
+                      pre.style.fontFamily = "sans-serif";
+                      pre.style.color = "#000000";
+                      pre.style.padding = "20px";
+                      pre.style.margin = "0";
+                      doc.body.style.backgroundColor = "#f3f4f6";
+                  } catch (error) {
+                      console.error("Could not apply preview styles:", error);
+                  }
+              });
+              parent.appendChild(preview);
+          }
+      }
+
+      function renderNodeDetails(node) {
+          sidebarContentElement.replaceChildren();
+          appendSidebarText(sidebarContentElement, "title", nodeDisplayName(node));
+          if (data.meta.type === "Keywords") {
+              appendMetadataLine(sidebarContentElement, `Degree: ${node.degree}`);
+              return;
+          }
+
+          appendNodeId(sidebarContentElement, node);
+          if (!isSequenceType) {
+              appendMetadataLine(sidebarContentElement,
+                                 `Degree: ${node.degree}, Backlinks: ${node.backlinks}`);
+          }
+          appendMetadataLine(sidebarContentElement, `Type: ${node.type}`);
+          if (node.signature) appendMetadataLine(sidebarContentElement, `Signature: ${node.signature}`);
+
+          const keywords = document.createElement("div");
+          keywords.className = "keywords";
+          if (node.keywords.length > 0) {
+              node.keywords.forEach(keyword => {
+                  const tag = document.createElement("span");
+                  tag.textContent = String(keyword);
+                  keywords.appendChild(tag);
+              });
+          } else {
+              appendSidebarText(keywords, "metadata", "No keywords");
+          }
+          sidebarContentElement.appendChild(keywords);
+          appendNodePreview(sidebarContentElement, node);
+
+          if (isSequenceType) {
+              const relationshipCount = finiteMetric(node, "degree");
+              const incomingRelationshipCount = finiteMetric(node, "backlinks");
+              const actualBacklinkCount = finiteMetric(node, "actualBacklinks");
+              if (relationshipCount !== null) {
+                  appendMetadataLine(sidebarContentElement,
+                                     `Relationships: ${relationshipCount} (unweighted incident)`);
+              }
+              if (incomingRelationshipCount !== null) {
+                  appendMetadataLine(sidebarContentElement,
+                                     `Incoming relationships: ${incomingRelationshipCount} (weighted)`);
+              }
+              if (actualBacklinkCount !== null) {
+                  appendMetadataLine(sidebarContentElement,
+                                     `Actual document backlinks: ${actualBacklinkCount} (weighted incoming link occurrences)`);
+              }
+          }
+      }
+
+      function renderEdgeDetails(relation) {
+          sidebarContentElement.replaceChildren();
+          appendSidebarText(sidebarContentElement, "title", "Connection Details");
+          appendMetadataLine(sidebarContentElement,
+                             `From: ${nodeDisplayName(nodeById.get(relation.sourceId))}`);
+          appendMetadataLine(sidebarContentElement,
+                             `To: ${nodeDisplayName(nodeById.get(relation.targetId))}`);
+          if (relation.weight) appendMetadataLine(sidebarContentElement, `Weight: ${relation.weight}`);
+      }
+
+      function renderSelectedDetailsOrPlaceholder() {
+          const selectedNode = nodes.find(node => node.id === selectedNodeId);
+          if (selectedNode) renderNodeDetails(selectedNode);
+          else renderSidebarPlaceholder();
+      }
+
+      function previewMatches(preview) {
+          return sidebarPreview && sidebarPreview.kind === preview.kind && sidebarPreview.id === preview.id;
+      }
+
+      function showSidebarPreview(preview, render) {
+          sidebarPreview = preview;
+          render();
+      }
+
+      function clearSidebarPreview(preview) {
+          if (!previewMatches(preview)) return;
+          sidebarPreview = null;
+          renderSelectedDetailsOrPlaceholder();
+      }
+
+      // Hover previews are temporary. Clearing their state before a focus pan prevents
+      // transform-driven mouseout events from replacing freshly selected details.
+      function selectSidebarNode(node) {
+          sidebarPreview = null;
+          renderNodeDetails(node);
+      }
+
+      // Add hover interaction for edges to show connection details in the sidebar.
       link.on("mouseover", (event, d) => {
-          const edgeContent = `
-          <div class="title">Connection Details</div>
-          <div class="metadata"><strong>From:</strong> ${d.source.name}</div>
-          <div class="metadata"><strong>To:</strong> ${d.target.name}</div>
-          ${d.weight ? `<div class="metadata"><strong>Weight:</strong> ${d.weight}</div>` : ''}
-          `;
-          d3.select("#sidebar-content").html(edgeContent);
+          showSidebarPreview({kind: "edge", id: d.key}, () => renderEdgeDetails(d));
       })
-      .on("mouseout", () => {
-          d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover to preview details. Select a node to keep focus.</div>');
+      .on("mouseout", (event, d) => {
+          clearSidebarPreview({kind: "edge", id: d.key});
       });
 
       // Persistent Sequence rings sit behind nodes and remain independent of later selection.
@@ -760,12 +929,12 @@
       .attr("class", "sequence-halo")
       .attr("r", d => nodeRadius(d) + 7);
 
-      let selectedNodeId = null;
       const selectedNodeStatus = d3.select("#selected-node-status");
       const clearFocusButton = document.getElementById("clear-focus-button");
 
       function nodeDisplayName(node) {
-          return typeof node.name === "string" && node.name.length > 0 ? node.name : String(node.id);
+          if (node && typeof node.name === "string" && node.name.length > 0) return node.name;
+          return node && node.id != null ? String(node.id) : "";
       }
 
       function nodeAccessibleName(node) {
@@ -863,6 +1032,7 @@
 
       function selectNode(node) {
           selectedNodeId = node.id;
+          selectSidebarNode(node);
           applyGraphStyles();
           panFocusedNode(node);
       }
@@ -872,6 +1042,8 @@
           svg.interrupt("focus-pan");
           applyingCameraMotion = false;
           selectedNodeId = null;
+          sidebarPreview = null;
+          renderSidebarPlaceholder();
           applyGraphStyles();
       }
 
@@ -898,76 +1070,10 @@
           }
       })
       .on("mouseover", (event, d) => {
-          // Check if the filename is an image, PDF, or a text document
-          const isImage = /\.(jpg|jpeg|png|gif|svg)$/i.test(d.filename);
-          const isPDF = /\.pdf$/i.test(d.filename);
-          const isTextDoc = /\.(txt|md|org)$/i.test(d.filename);
-          // Generate content based on meta.type
-          const sidebarContent = data.meta.type === "Keywords"
-          ? `
-          <div class="title">${d.name}</div>
-          <div class="metadata">Degree: ${d.degree}</div>
-          `:
-          // Sidebar content for other types
-          `
-          <div class="title">${d.name}</div>
-          <div class="metadata">ID: ${d.id.replace('T', '<span class="lighter">T</span>')}</div>
-          ${isSequenceType ? '' : `<div class="metadata">Degree: ${d.degree}, Backlinks: ${d.backlinks}</div>`}
-          <div class="metadata">Type: ${d.type}</div>
-          ${d.signature ? `<div class="metadata">Signature: ${d.signature}</div>` : ''}
-          <div class="keywords">${d.keywords && d.keywords.length > 0 ? d.keywords.map(keyword =>
-            `<span>${keyword}</span>`).join('') :
-            '<div class="metadata">No keywords</div>'}</div>
-          ${isImage
-          ? `<img src="${d.filename}" alt="${d.name}"
-	      onload="if(this.naturalHeight > this.naturalWidth) this.style.maxHeight='500px';"
-	      style="max-width: 100%; height: auto; margin-top: 15px; border-radius: 4px; box-shadow: 0 2px 8px rgba(0,0,0,0.1);">`
-            : isPDF
-          ? `<iframe src="${d.filename}?toolbar=0&navpanes=0&scrollbar=0#view=FitH"
-		     style="width: 100%; height: 500px; margin-top: 15px; border: 1px solid #ddd; border-radius: 4px;"></iframe>`
-            : isTextDoc
-          ? `
-             <div class="metadata" style="margin-top: 15px; font-weight: bold;">File Preview:</div>
-             <iframe src="${d.filename}"
-		     onload="try {
-			 const doc = this.contentDocument || this.contentWindow.document;
-			 const pre = doc.querySelector('pre') || doc.body;
-			 pre.style.fontSize = '22px';
-			 pre.style.lineHeight = '1.6';
-			 pre.style.fontFamily = 'sans-serif';
-			 pre.style.color = '#000000';
-			 pre.style.padding = '20px';
-			 pre.style.margin = '0';
-			 doc.body.style.backgroundColor = '#f3f4f6';
-		     } catch(e) { console.error('Could not apply preview styles:', e); }"
-		     style="width: 100%; height: 450px; margin-top: 5px; border: 1px solid #ddd; border-radius: 4px; background-color: #fcfcfc;"></iframe>`
-              : ''
-            }
-          `;
-          // Sequence metrics name relationship kinds and use text-only insertion.
-          const sidebarContentElement = document.getElementById("sidebar-content");
-          d3.select(sidebarContentElement).html(sidebarContent);
-          if (isSequenceType) {
-              const relationshipCount = finiteMetric(d, "degree");
-              const incomingRelationshipCount = finiteMetric(d, "backlinks");
-              const actualBacklinkCount = finiteMetric(d, "actualBacklinks");
-              if (relationshipCount !== null) {
-                  appendMetadataLine(sidebarContentElement,
-                                     `Relationships: ${relationshipCount} (unweighted incident)`);
-              }
-              if (incomingRelationshipCount !== null) {
-                  appendMetadataLine(sidebarContentElement,
-                                     `Incoming relationships: ${incomingRelationshipCount} (weighted)`);
-              }
-              if (actualBacklinkCount !== null) {
-                  appendMetadataLine(sidebarContentElement,
-                                     `Actual document backlinks: ${actualBacklinkCount} (weighted incoming link occurrences)`);
-              }
-          }
+          showSidebarPreview({kind: "node", id: d.id}, () => renderNodeDetails(d));
       })
-      .on("mouseout", () => {
-          // Revert to placeholder on mouseout
-          d3.select("#sidebar-content").html('<div class="sidebar-placeholder">Hover to preview details. Select a node to keep focus.</div>');
+      .on("mouseout", (event, d) => {
+          clearSidebarPreview({kind: "node", id: d.id});
       });
       // Keep D3's movement threshold while consuming only drag's generated click.
       const dragClickDistance = 3;
@@ -1536,11 +1642,14 @@
       // Label density slider initialization
       const slider = d3.select('#density-slider')
 	    .attr('min', 0)
-	    .attr('max', uniqueDegrees.length - 1)
+	    .attr('max', uniqueDegrees.length)
 	    .attr('value', initialSliderValue)
 	    .on('input', function () {
-		const idx = (uniqueDegrees.length - 1) - +this.value;
-		minDegreeTag = uniqueDegrees[idx];
+                const value = Math.max(0, Math.min(uniqueDegrees.length, Number(this.value) || 0));
+                labelsVisible = value > 0;
+                if (labelsVisible) {
+                    minDegreeTag = uniqueDegrees[uniqueDegrees.length - value];
+                }
 		updateLabels();
 	    });
 
